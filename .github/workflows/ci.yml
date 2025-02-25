@@ -1,0 +1,168 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+  VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+
+jobs:
+  quality:
+    name: Quality Checks
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: |
+          echo "Installing dependencies..."
+          npm ci --ignore-scripts
+          npm install -g typescript
+
+      - name: Debug Environment
+        run: |
+          echo "Node version: $(node -v)"
+          echo "NPM version: $(npm -v)"
+          echo "TypeScript version: $(tsc --version)"
+          echo "Directory contents:"
+          ls -la
+          echo "TSConfig files:"
+          find . -name "tsconfig*.json"
+          echo "Package.json contents:"
+          cat package.json
+
+      - name: Type check
+        run: |
+          echo "Running TypeScript check..."
+          echo "Using tsconfig.json:"
+          cat tsconfig.json
+          tsc --noEmit --pretty --project tsconfig.json
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v1
+        with:
+          bun-version: latest
+
+      - name: Install Bun dependencies
+        run: |
+          echo "Installing Bun dependencies..."
+          bun install --no-cache
+
+      - name: Lint
+        run: |
+          echo "Running ESLint..."
+          bun run lint
+
+      - name: Run tests
+        run: bun run test
+        env:
+          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+
+      - name: Build
+        run: bun run build
+        env:
+          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+
+  preview:
+    name: Preview Deployment
+    needs: quality
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Vercel CLI
+        run: npm install --global vercel@latest
+
+      - name: Debug Vercel Setup
+        run: |
+          echo "Vercel CLI version: $(vercel --version)"
+          echo "VERCEL_ORG_ID: ${VERCEL_ORG_ID}"
+          echo "VERCEL_PROJECT_ID: ${VERCEL_PROJECT_ID}"
+
+      - name: Link to Vercel Project
+        run: |
+          echo "Linking to Vercel project..."
+          vercel link --confirm --token=${{ secrets.VERCEL_TOKEN }} --project ${VERCEL_PROJECT_ID}
+
+      - name: Pull Vercel Environment Information
+        run: |
+          echo "Pulling Vercel environment information..."
+          vercel pull --yes --environment=preview --token=${{ secrets.VERCEL_TOKEN }}
+
+      - name: Build Project Artifacts
+        run: |
+          echo "Building project..."
+          vercel build --token=${{ secrets.VERCEL_TOKEN }}
+
+      - name: Deploy Preview
+        id: deploy
+        run: |
+          echo "Deploying preview..."
+          DEPLOYMENT_URL=$(vercel deploy --prebuilt --token=${{ secrets.VERCEL_TOKEN }})
+          echo "deployment_url=$DEPLOYMENT_URL" >> $GITHUB_OUTPUT
+          echo "Deployed to $DEPLOYMENT_URL"
+
+      - name: Comment PR
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const deploymentUrl = '${{ steps.deploy.outputs.deployment_url }}';
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.name,
+              body: `✨ Preview deployment is ready! You can view it here: ${deploymentUrl}`
+            });
+
+  production:
+    name: Production Deployment
+    needs: quality
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Vercel CLI
+        run: npm install --global vercel@latest
+
+      - name: Debug Vercel Setup
+        run: |
+          echo "Vercel CLI version: $(vercel --version)"
+          echo "VERCEL_ORG_ID: ${VERCEL_ORG_ID}"
+          echo "VERCEL_PROJECT_ID: ${VERCEL_PROJECT_ID}"
+
+      - name: Link to Vercel Project
+        run: |
+          echo "Linking to Vercel project..."
+          vercel link --confirm --token=${{ secrets.VERCEL_TOKEN }} --project ${VERCEL_PROJECT_ID}
+
+      - name: Pull Vercel Environment Information
+        run: |
+          echo "Pulling Vercel environment information..."
+          vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
+
+      - name: Build Project Artifacts
+        run: |
+          echo "Building project..."
+          vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
+
+      - name: Deploy to Production
+        run: |
+          echo "Deploying to production..."
+          vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }} 

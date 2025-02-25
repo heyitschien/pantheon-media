@@ -1,0 +1,386 @@
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+} from "./dialog";
+import { Play, Plus, ThumbsUp, VolumeX, Volume2, X } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { theme } from "@/config/theme";
+import { useState, useRef, useEffect, useCallback } from "react";
+import { getPreviewVideo } from "@/services/pexels";
+import { usePlayer } from "@/contexts/PlayerContext";
+import { useToast } from "@/hooks/use-toast";
+import { PlayButton, AddToListButton, LikeButton, VolumeButton } from "./movie-controls";
+
+interface MovieInfoModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  movie: {
+    title: string;
+    image: string;
+    description: string;
+    rating: string;
+    duration: string;
+    year: string;
+    genres?: string[];
+    director?: string;
+    cast?: string[];
+    tags?: string[];
+    match?: number;
+    similarMovies?: Array<{
+      title: string;
+      image: string;
+      description: string;
+      rating: string;
+      duration: string;
+      year: string;
+    }>;
+  };
+}
+
+export function MovieInfoModal({ isOpen, onClose, movie }: MovieInfoModalProps) {
+  const [previewVideo, setPreviewVideo] = useState<{ videoUrl: string; posterUrl: string } | null>(null);
+  const [showVideo, setShowVideo] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [isMuted, setIsMuted] = useState(true);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [retryCount, setRetryCount] = useState(0);
+  const maxRetries = 3;
+  const { playMovie } = usePlayer();
+  const { toast } = useToast();
+  const [activeButton, setActiveButton] = useState<string | null>(null);
+
+  // Enhanced fetch preview video function
+  const fetchPreviewVideo = useCallback(async () => {
+    if (previewVideo && videoRef.current) {
+      videoRef.current.currentTime = 0;
+      videoRef.current.muted = isMuted;
+      videoRef.current.play();
+      setShowVideo(true);
+      return;
+    }
+
+    setIsLoading(true);
+    setError(null);
+    setShowVideo(false);
+
+    try {
+      const searchQuery = `${movie.title} ${movie.genres?.join(' ')} movie scene`;
+      const video = await getPreviewVideo(searchQuery, {
+        maxDuration: 30,
+        minDuration: 5,
+        orientation: 'landscape',
+      });
+      setPreviewVideo(video);
+      setRetryCount(0);
+      
+      if (videoRef.current) {
+        videoRef.current.muted = true;
+        await videoRef.current.play();
+        setShowVideo(true);
+      }
+    } catch (err) {
+      console.error('Failed to load preview:', err);
+      if (retryCount < maxRetries) {
+        setRetryCount(prev => prev + 1);
+        setTimeout(fetchPreviewVideo, 1000);
+      } else {
+        setError('Unable to load preview. Please try again later.');
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  }, [movie.title, movie.genres, previewVideo, retryCount, isMuted]);
+
+  // Enhanced modal open/close effect
+  useEffect(() => {
+    let timeout: NodeJS.Timeout;
+    
+    if (isOpen) {
+      timeout = setTimeout(fetchPreviewVideo, 500);
+    } else {
+      setShowVideo(false);
+      setError(null);
+      if (videoRef.current) {
+        videoRef.current.pause();
+        videoRef.current.currentTime = 0;
+      }
+      setIsMuted(true);
+    }
+
+    return () => {
+      clearTimeout(timeout);
+    };
+  }, [isOpen, fetchPreviewVideo]);
+
+  // Video element event handlers
+  const handleVideoLoaded = useCallback(() => {
+    if (videoRef.current) {
+      videoRef.current.muted = isMuted;
+    }
+  }, [isMuted]);
+
+  const handleVideoError = useCallback(() => {
+    setError('Failed to play video');
+    setShowVideo(false);
+  }, []);
+
+  // Enhanced volume toggle with smoother state management
+  const handleVolumeToggle = useCallback((event: React.MouseEvent) => {
+    event.preventDefault();
+    event.stopPropagation();
+    
+    if (videoRef.current) {
+      const newMutedState = !videoRef.current.muted;
+      videoRef.current.muted = newMutedState;
+      setIsMuted(newMutedState);
+    }
+  }, []);
+
+  const handlePlay = async () => {
+    try {
+      const searchQuery = `${movie.title} ${movie.genres?.join(' ')} movie scene`;
+      const video = await getPreviewVideo(searchQuery, {
+        maxDuration: 30,
+        minDuration: 5,
+        orientation: 'landscape',
+      });
+      
+      playMovie({
+        videoUrl: video.videoUrl,
+        posterUrl: video.posterUrl,
+        title: movie.title
+      });
+      onClose();
+    } catch (error) {
+      console.error('Failed to play video:', error);
+    }
+  };
+
+  const handleAddToList = (event: React.MouseEvent) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setActiveButton('add');
+    setTimeout(() => setActiveButton(null), 1500);
+  };
+
+  const handleLike = (event: React.MouseEvent) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setActiveButton('like');
+    setTimeout(() => setActiveButton(null), 1500);
+  };
+
+  return (
+    <Dialog open={isOpen} onOpenChange={onClose}>
+      <DialogContent className="max-w-5xl p-0 overflow-hidden bg-zinc-900 mt-0 top-[3vh] translate-y-0 border-0">
+        <DialogDescription className="sr-only">
+          Movie details for {movie.title}
+        </DialogDescription>
+        
+        {/* Close Button */}
+        <button
+          onClick={() => onClose()}
+          className="absolute top-2 right-2 z-50 p-1.5 rounded-full bg-zinc-800/80 hover:bg-zinc-700/80 transition-colors"
+        >
+          <X className="w-4 h-4 text-white/80" />
+        </button>
+
+        <div>
+          {/* Preview Section */}
+          <div className="relative w-full aspect-[16/9]">
+            {/* Static Image */}
+            <img
+              src={movie.image}
+              alt={`${movie.title} backdrop`}
+              className={cn(
+                "w-full h-full object-cover transition-opacity duration-700",
+                showVideo ? "opacity-0" : "opacity-100"
+              )}
+            />
+
+            {/* Video Preview */}
+            {previewVideo && (
+              <div className="absolute inset-0">
+                <video
+                  ref={videoRef}
+                  src={previewVideo.videoUrl}
+                  poster={previewVideo.posterUrl}
+                  className={cn(
+                    "w-full h-full object-cover",
+                    "transition-opacity duration-1000",
+                    showVideo ? "opacity-100" : "opacity-0"
+                  )}
+                  muted
+                  loop
+                  playsInline
+                  preload="auto"
+                />
+
+                {/* Volume Control */}
+                {showVideo && !error && (
+                  <VolumeButton
+                    onClick={handleVolumeToggle}
+                    isMuted={isMuted}
+                    showFeedback={true}
+                  />
+                )}
+              </div>
+            )}
+
+            {/* Loading and Error States remain the same */}
+            {isLoading && (
+              <div className="absolute inset-0 flex flex-col items-center justify-center bg-zinc-900/80 backdrop-blur-sm">
+                <div className="w-8 h-8 border-3 border-white border-t-transparent rounded-full animate-spin mb-2" />
+                <p className="text-white text-sm font-medium">
+                  {retryCount > 0 ? `Retrying (${retryCount}/${maxRetries})...` : 'Loading preview...'}
+                </p>
+              </div>
+            )}
+
+            {error && !isLoading && (
+              <div className="absolute inset-0 flex flex-col items-center justify-center bg-zinc-900/80 backdrop-blur-sm">
+                <p className="text-white text-sm font-medium text-center px-4 mb-2">{error}</p>
+                <button
+                  onClick={() => {
+                    setRetryCount(0);
+                    setError(null);
+                    fetchPreviewVideo();
+                  }}
+                  className="px-4 py-1.5 bg-white/10 hover:bg-white/20 rounded-md text-white text-sm transition-colors"
+                >
+                  Retry
+                </button>
+              </div>
+            )}
+
+            {/* Preview Overlay Gradient */}
+            <div className="absolute inset-0 bg-gradient-to-t from-zinc-900 via-zinc-900/50 to-transparent" />
+            
+            {/* Content Overlay */}
+            <div className="absolute bottom-0 left-0 right-0 p-6">
+              {/* Title and Action Buttons */}
+              <div className="flex flex-col gap-4">
+                <h2 className="text-3xl font-bold text-white">{movie.title}</h2>
+                
+                {/* Action Buttons */}
+                <div className="flex items-center gap-2 mt-4">
+                  <PlayButton onClick={handlePlay} showText={true} />
+                  <AddToListButton 
+                    onClick={handleAddToList}
+                    isActive={activeButton === 'add'}
+                    showFeedback={activeButton === 'add'}
+                  />
+                  <LikeButton
+                    onClick={handleLike}
+                    isActive={activeButton === 'like'}
+                    showFeedback={activeButton === 'like'}
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Info Section */}
+          <div className="px-6 py-4">
+            <div className="grid grid-cols-[2fr,1fr] gap-6">
+              {/* Left Column */}
+              <div>
+                {/* Metadata Row */}
+                <div className="flex items-center gap-2 text-sm mb-4">
+                  {movie.match && (
+                    <span className="text-green-500 font-medium">{movie.match}% Match</span>
+                  )}
+                  <span className="text-white">{movie.year}</span>
+                  <span className="text-white/50">•</span>
+                  <span className="text-white">{movie.duration}</span>
+                  <span className="text-white/50">•</span>
+                  <span className="px-1.5 py-0.5 text-xs font-medium border border-white/30 text-white rounded-sm">
+                    {movie.rating}
+                  </span>
+                </div>
+
+                {/* Description */}
+                <p className="text-white/90 text-sm leading-relaxed mb-4">{movie.description}</p>
+              </div>
+
+              {/* Right Column */}
+              <div className="space-y-4 text-sm">
+                {/* Cast */}
+                {movie.cast && movie.cast.length > 0 && (
+                  <p>
+                    <span className="text-white/50">Cast: </span>
+                    <span className="text-white">{movie.cast.join(', ')}</span>
+                  </p>
+                )}
+                
+                {/* Director */}
+                {movie.director && (
+                  <p>
+                    <span className="text-white/50">Director: </span>
+                    <span className="text-white">{movie.director}</span>
+                  </p>
+                )}
+
+                {/* Genres */}
+                {movie.genres && movie.genres.length > 0 && (
+                  <div>
+                    <span className="text-white/50 block mb-2">Genres: </span>
+                    <div className="flex flex-wrap gap-2">
+                      {movie.genres.map((genre, index) => (
+                        <button
+                          key={index}
+                          onClick={() => window.location.href = `/genres/${genre.toLowerCase()}`}
+                          className={cn(
+                            "text-xs text-white/80 px-2 py-1 bg-zinc-800/80 rounded",
+                            "hover:bg-zinc-700/80 hover:text-white",
+                            "transition-all duration-200",
+                            "hover:scale-105",
+                            "cursor-pointer",
+                            "ring-1 ring-white/10 hover:ring-white/20"
+                          )}
+                        >
+                          {genre}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* More Like This Section */}
+          {movie.similarMovies && movie.similarMovies.length > 0 && (
+            <div className="px-6 py-4 border-t border-white/10">
+              <h3 className="text-lg font-medium text-white mb-4">More Like This</h3>
+              <div className="grid grid-cols-3 gap-4">
+                {movie.similarMovies.map((similar, index) => (
+                  <div key={index} className="rounded-md overflow-hidden bg-zinc-800/50">
+                    <img
+                      src={similar.image}
+                      alt={similar.title}
+                      className="w-full aspect-video object-cover"
+                    />
+                    <div className="p-3">
+                      <div className="flex items-center justify-between gap-2 mb-2">
+                        <span className="text-sm font-medium text-white line-clamp-1">{similar.title}</span>
+                        {similar.rating && (
+                          <span className="text-[10px] text-white/70 px-1.5 py-0.5 border border-white/20 rounded whitespace-nowrap">
+                            {similar.rating}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-white/70 line-clamp-2">{similar.description}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
