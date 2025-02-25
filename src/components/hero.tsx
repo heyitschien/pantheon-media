@@ -24,10 +24,16 @@ export function Hero() {
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [isMuted, setIsMuted] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isCompactMode, setIsCompactMode] = useState(false);
+  const [transitionProgress, setTransitionProgress] = useState(0);
   const videoRef = useRef<HTMLVideoElement>(null);
   const [isForward, setIsForward] = useState(true);
   const transitionTimeoutRef = useRef<NodeJS.Timeout>();
+  const compactModeTimeoutRef = useRef<NodeJS.Timeout>();
+  const animationFrameRef = useRef<number>();
   const { playMovie } = usePlayer();
+  const [isVideoEnded, setIsVideoEnded] = useState(false);
+  const [isReverseTransitioning, setIsReverseTransitioning] = useState(false);
 
   useEffect(() => {
     const loadVideo = async () => {
@@ -52,18 +58,100 @@ export function Hero() {
       videoRef.current.muted = true;
     }
 
-    if (isVideoLoaded && videoAsset) {
-      transitionTimeoutRef.current = setTimeout(() => {
-        handlePlay();
+    if (isVideoLoaded && videoAsset && videoRef.current) {
+      const playVideo = async () => {
+        try {
+          await videoRef.current?.play();
+          setShowVideo(true);
+        } catch (error) {
+          console.error('Failed to play video:', error);
+        }
+      };
+
+      const timer = setTimeout(() => {
+        playVideo();
       }, 3000);
+
+      return () => clearTimeout(timer);
+    }
+  }, [isVideoLoaded, videoAsset]);
+
+  // Effect to trigger compact mode after video starts playing
+  useEffect(() => {
+    if (showVideo) {
+      compactModeTimeoutRef.current = setTimeout(() => {
+        // Start the smooth transition animation
+        setIsTransitioning(true);
+        setIsForward(true);
+        
+        let startTime: number;
+        const duration = 1500; // 1.5 seconds for the transition
+        
+        const animateTransition = (timestamp: number) => {
+          if (!startTime) startTime = timestamp;
+          const elapsed = timestamp - startTime;
+          const progress = Math.min(elapsed / duration, 1);
+          
+          setTransitionProgress(progress);
+          
+          if (progress < 1) {
+            animationFrameRef.current = requestAnimationFrame(animateTransition);
+          } else {
+            setIsCompactMode(true);
+            setIsTransitioning(false);
+          }
+        };
+        
+        animationFrameRef.current = requestAnimationFrame(animateTransition);
+      }, 4000); // 4 seconds after video starts
     }
 
     return () => {
-      if (transitionTimeoutRef.current) {
-        clearTimeout(transitionTimeoutRef.current);
+      if (compactModeTimeoutRef.current) {
+        clearTimeout(compactModeTimeoutRef.current);
+      }
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
       }
     };
-  }, [isVideoLoaded, videoAsset]);
+  }, [showVideo]);
+
+  // Effect to handle reverse animation when video ends
+  useEffect(() => {
+    if (isVideoEnded && isCompactMode) {
+      // Start the reverse animation
+      setIsReverseTransitioning(true);
+      setIsForward(false);
+      
+      let startTime: number;
+      const duration = 1500; // 1.5 seconds for the reverse transition
+      
+      const animateReverseTransition = (timestamp: number) => {
+        if (!startTime) startTime = timestamp;
+        const elapsed = timestamp - startTime;
+        const progress = Math.min(elapsed / duration, 1);
+        
+        // For reverse animation, we go from 1 to 0
+        setTransitionProgress(1 - progress);
+        
+        if (progress < 1) {
+          animationFrameRef.current = requestAnimationFrame(animateReverseTransition);
+        } else {
+          setIsCompactMode(false);
+          setIsReverseTransitioning(false);
+          setTransitionProgress(0);
+        }
+      };
+      
+      animationFrameRef.current = requestAnimationFrame(animateReverseTransition);
+    }
+
+    return () => {
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+      }
+    };
+  }, [isVideoEnded, isCompactMode]);
 
   const handleVideoLoaded = () => {
     setIsVideoLoaded(true);
@@ -73,37 +161,26 @@ export function Hero() {
   const handleTimeUpdate = () => {
     if (!videoRef.current) return;
     
-    const video = videoRef.current;
-    const threshold = 0.1; // Smaller threshold for more precise transitions
-    
-    if (isForward && video.currentTime >= video.duration - threshold) {
-      // Reached the end, switch to reverse
-      video.playbackRate = -1;
-      setIsForward(false);
-    } else if (!isForward && video.currentTime <= threshold) {
-      // Reached the start, switch to forward
-      video.playbackRate = 1;
-      setIsForward(true);
+    // Check if the video has reached its end (with a small buffer)
+    if (videoRef.current.currentTime >= videoRef.current.duration - 0.5) {
+      setIsVideoEnded(true);
+    } else if (isVideoEnded) {
+      setIsVideoEnded(false);
     }
   };
 
+  const handleVideoEnded = () => {
+    setIsVideoEnded(true);
+    setShowVideo(false);
+  };
+
   const handlePlay = () => {
-    if (!isVideoLoaded || !videoAsset || isTransitioning) return;
+    if (!videoRef.current || !isVideoLoaded || !videoAsset) return;
     
-    setIsTransitioning(true);
-    
-    if (videoRef.current) {
-      videoRef.current.currentTime = 0;
-      videoRef.current.playbackRate = 1;
-      setIsForward(true);
-      videoRef.current.play()
-        .then(() => {
-          setShowVideo(true);
-          setTimeout(() => {
-            setIsTransitioning(false);
-          }, 1000);
-        })
-        .catch(console.error);
+    try {
+      videoRef.current.play();
+    } catch (error) {
+      console.error('Failed to play video:', error);
     }
   };
 
@@ -127,9 +204,52 @@ export function Hero() {
     }
   };
 
+  // Calculate transition styles based on progress
+  const getTransitionStyles = () => {
+    if (isCompactMode && !isReverseTransitioning) {
+      return {
+        transform: 'translateY(-12px)',
+        marginBottom: '0'
+      };
+    }
+    
+    if (isTransitioning || isReverseTransitioning) {
+      const translateY = -12 * transitionProgress;
+      const marginBottom = 96 * (1 - transitionProgress);
+      
+      return {
+        transform: `translateY(${translateY}px)`,
+        marginBottom: `${marginBottom}px`
+      };
+    }
+    
+    return {
+      transform: 'translateY(0)',
+      marginBottom: '96px' // 24rem = 96px
+    };
+  };
+
+  // Calculate text opacity based on transition progress
+  const getTextOpacity = () => {
+    if (isCompactMode && !isReverseTransitioning) return 0;
+    if (isTransitioning) return 1 - transitionProgress;
+    if (isReverseTransitioning) return 1 - transitionProgress;
+    return 1;
+  };
+
+  // Calculate title scale based on transition progress
+  const getTitleScale = () => {
+    if (isCompactMode && !isReverseTransitioning) return 0.85;
+    if (isTransitioning) return 1 - (0.15 * transitionProgress);
+    if (isReverseTransitioning) return 1 - (0.15 * transitionProgress);
+    return 1;
+  };
+
   return (
     <>
-      <div className="relative w-screen h-[80vh] bg-white dark:bg-pantheon-night overflow-hidden">
+      <div 
+        className="relative w-screen h-[85vh] bg-pantheon-night overflow-hidden"
+      >
         <div className="absolute inset-0 w-screen">
           {/* Image Layer */}
           <div 
@@ -155,11 +275,12 @@ export function Hero() {
                 autoPlay
                 muted
                 playsInline
-                loop
                 poster={videoAsset.fallback}
                 className="w-full h-full object-cover"
                 onLoadedData={handleVideoLoaded}
                 onTimeUpdate={handleTimeUpdate}
+                onPause={handlePlay}
+                onEnded={handleVideoEnded}
               >
                 <source src={videoAsset.url} type="video/mp4" />
               </video>
@@ -179,6 +300,7 @@ export function Hero() {
             </div>
           )}
           
+          {/* Enhanced gradients for better text visibility */}
           <div className="absolute inset-0 bg-gradient-to-r from-pantheon-night/40 via-pantheon-night/20 to-transparent" />
           <div className="absolute bottom-0 left-0 right-0 h-[30%] bg-gradient-to-t from-pantheon-light dark:from-pantheon-night to-transparent" />
         </div>
@@ -191,25 +313,73 @@ export function Hero() {
 
         <div className="relative h-full z-20">
           <div className="h-full max-w-[2000px] mx-auto px-12 sm:px-14 lg:px-16 flex flex-col justify-center">
-            <div className="bg-white/30 dark:bg-pantheon-night/30 backdrop-blur-sm p-6 rounded-lg max-w-xl">
-              <span className="inline-block bg-gradient-to-r from-[#F09045] via-[#FFB067] to-[#F09045] bg-clip-text text-transparent font-medium text-sm mb-2">Regenerative Lifestyle</span>
-              <h1 className="text-4xl md:text-6xl font-bold text-pantheon-night dark:text-white mb-4">Regenerative Lifestyle Media</h1>
-              <p className="text-pantheon-night/90 dark:text-white/90 mb-6">
+            <div 
+              className="max-w-2xl transition-all duration-1000 ease-in-out"
+              style={getTransitionStyles()}
+            >
+              <span 
+                className="inline-block bg-gradient-to-r from-[#F09045] via-[#FFB067] to-[#F09045] bg-clip-text text-transparent font-medium text-sm mb-3 transition-opacity duration-700"
+                style={{ opacity: getTextOpacity() }}
+              >
+                Regenerative Lifestyle
+              </span>
+              
+              {/* Title with maintained structure */}
+              {isCompactMode && !isReverseTransitioning ? (
+                <div className="flex flex-col origin-left">
+                  <h2 className="text-4xl md:text-6xl font-bold text-white drop-shadow-lg mb-1 transition-all duration-1000">
+                    Regenerative
+                  </h2>
+                  <h2 className="text-4xl md:text-6xl font-bold text-white drop-shadow-lg mb-8 transition-all duration-1000">
+                    Lifestyle Media
+                  </h2>
+                </div>
+              ) : (
+                <h1 
+                  className="text-5xl md:text-7xl font-bold text-white drop-shadow-lg transition-all duration-1000 origin-left"
+                  style={{ 
+                    transform: `scale(${getTitleScale()})`,
+                    marginBottom: isTransitioning || isReverseTransitioning ? `${16 + (16 * transitionProgress)}px` : '16px'
+                  }}
+                >
+                  {(isTransitioning || isReverseTransitioning) ? (
+                    <div className="flex flex-col">
+                      <div className="transition-transform duration-1000" style={{ transform: `translateY(${-10 * transitionProgress}px)` }}>
+                        Regenerative
+                      </div>
+                      <div className="transition-transform duration-1000" style={{ transform: `translateY(${-5 * transitionProgress}px)` }}>
+                        Lifestyle Media
+                      </div>
+                    </div>
+                  ) : (
+                    <span className="inline-block">Regenerative Lifestyle Media</span>
+                  )}
+                </h1>
+              )}
+              
+              <p 
+                className="text-lg text-white max-w-xl drop-shadow-lg transition-all duration-700 overflow-hidden"
+                style={{ 
+                  opacity: getTextOpacity(),
+                  maxHeight: (isTransitioning || isReverseTransitioning) ? `${80 * (1 - transitionProgress)}px` : (isCompactMode ? '0' : '80px'),
+                  marginBottom: (isTransitioning || isReverseTransitioning) ? `${32 * (1 - transitionProgress)}px` : (isCompactMode ? '0' : '32px')
+                }}
+              >
                 Creating content that inspires positive change and promotes holistic well-being.
                 Our cinematic approach captures the essence of regenerative living through emotional storytelling.
               </p>
-              <div className="flex items-center gap-4">
+              <div className="flex items-center gap-4 transition-transform duration-1000">
                 <button 
                   onClick={handlePlayClick}
-                  className="px-6 py-2 bg-gradient-lotus text-white rounded-lg font-semibold flex items-center gap-2 hover:shadow-lg hover:shadow-pantheon-pink/20 transition-all border border-white/10"
-                  disabled={!isVideoLoaded || !videoAsset || isTransitioning}
+                  className="px-8 py-3 bg-gradient-lotus text-white rounded-lg font-semibold flex items-center gap-2 hover:shadow-lg hover:shadow-pantheon-pink/20 transition-all border border-white/10"
+                  disabled={!isVideoLoaded || !videoAsset || isTransitioning || isReverseTransitioning}
                 >
                   <Play className="w-5 h-5" />
                   Watch Our Work
                 </button>
                 <button 
                   onClick={() => setIsModalOpen(true)}
-                  className="px-6 py-2 bg-white/20 dark:bg-white/20 text-pantheon-night dark:text-white rounded-lg font-semibold flex items-center gap-2 hover:bg-white/30 dark:hover:bg-white/30 transition-colors backdrop-blur-sm border border-white/10"
+                  className="px-8 py-3 bg-white hover:bg-white/90 text-pantheon-night rounded-lg font-semibold flex items-center gap-2 transition-colors"
                 >
                   <Info className="w-5 h-5" />
                   More Info
