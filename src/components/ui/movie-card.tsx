@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from "react";
-import { Play, Plus, ThumbsUp, Info, Trophy } from "lucide-react";
+import { Play, Eye, Heart, Info, Trophy } from "lucide-react";
 import { theme } from "@/config/theme";
 import { MovieInfoModal } from "./movie-info-modal";
 import { getPreviewVideo } from "@/services/pexels";
@@ -13,7 +13,7 @@ import {
 } from "./tooltip";
 import { cn } from "@/lib/utils";
 import { usePlayer } from "@/contexts/PlayerContext";
-import { PlayButton, AddToListButton, LikeButton, InfoButton } from "./movie-controls";
+import { PlayButton, AddToListButton, InfoButton, MovieControlButton } from "./movie-controls";
 import { OriginalBadge } from "./badges/original-badge";
 
 interface MovieCardProps {
@@ -77,6 +77,8 @@ export function MovieCard({
   const maxRetries = 3;
   const [activeButton, setActiveButton] = useState<string | null>(null);
   const [feedbackPosition, setFeedbackPosition] = useState({ x: 0, y: 0 });
+  const [viewCount, setViewCount] = useState(0);
+  const [isLiked, setIsLiked] = useState(false);
 
   // Fetch preview video
   const fetchPreviewVideo = useCallback(async () => {
@@ -277,7 +279,7 @@ export function MovieCard({
     }
   };
 
-  const handleAddToList = (event: React.MouseEvent) => {
+  const handleView = (event: React.MouseEvent) => {
     event.preventDefault();
     event.stopPropagation();
     
@@ -288,7 +290,8 @@ export function MovieCard({
       y: rect.top
     });
     
-    setActiveButton('add');
+    setViewCount(prev => prev + 1);
+    setActiveButton('view');
     setTimeout(() => setActiveButton(null), 1500);
   };
 
@@ -303,6 +306,7 @@ export function MovieCard({
       y: rect.top
     });
     
+    setIsLiked(!isLiked);
     setActiveButton('like');
     setTimeout(() => setActiveButton(null), 1500);
   };
@@ -321,7 +325,7 @@ export function MovieCard({
           alt={title}
           className="w-full h-[176px] object-cover rounded-lg brightness-110"
         />
-        <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent rounded-lg">
+        <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent rounded-lg">
           <div className="absolute bottom-0 p-3 w-full">
             <h3 className="text-white font-bold text-lg line-clamp-1">{title}</h3>
           </div>
@@ -381,15 +385,31 @@ export function MovieCard({
               <div className="absolute -bottom-16 left-0 right-0 flex items-center justify-between px-4">
                 <div className="flex items-center gap-3">
                   <PlayButton onClick={handlePlay} />
-                  <AddToListButton 
-                    onClick={handleAddToList}
-                    isActive={activeButton === 'add'}
-                    showFeedback={activeButton === 'add'}
+                  <MovieControlButton
+                    onClick={handleView}
+                    icon={
+                      <div className="relative">
+                        <Eye className="w-6 h-6 text-white" />
+                        {viewCount > 0 && (
+                          <span className="absolute -top-2 -right-2 bg-pantheon-pink text-white text-xs rounded-full px-1.5 py-0.5">
+                            {viewCount}
+                          </span>
+                        )}
+                      </div>
+                    }
+                    label="View count"
+                    isActive={activeButton === 'view'}
                   />
-                  <LikeButton
+                  <MovieControlButton
                     onClick={handleLike}
+                    icon={
+                      <Heart className={cn(
+                        "w-6 h-6",
+                        isLiked ? "text-pantheon-pink fill-pantheon-pink" : "text-white"
+                      )} />
+                    }
+                    label="Like"
                     isActive={activeButton === 'like'}
-                    showFeedback={activeButton === 'like'}
                   />
                 </div>
                 <InfoButton onClick={handleMoreInfo} />

@@ -1,4 +1,4 @@
-import { Play, Plus, ThumbsUp, Info, Volume2, VolumeX } from "lucide-react";
+import { Play, Plus, Eye, Heart, Info, Volume2, VolumeX } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface MovieControlButtonProps {
@@ -73,7 +73,7 @@ export function AddToListButton({ onClick, isActive, showFeedback }: { onClick: 
   return (
     <MovieControlButton
       onClick={onClick}
-      icon={<Plus className={cn(
+      icon={<Eye className={cn(
         "w-6 h-6 text-white transition-transform duration-200",
         isActive && "rotate-90"
       )} />}
@@ -89,13 +89,13 @@ export function LikeButton({ onClick, isActive, showFeedback }: { onClick: (even
   return (
     <MovieControlButton
       onClick={onClick}
-      icon={<ThumbsUp className={cn(
-        "w-6 h-6 text-white transition-transform duration-200",
-        isActive && "scale-110"
+      icon={<Heart className={cn(
+        "w-6 h-6 text-white transition-colors duration-200",
+        isActive && "text-pantheon-pink fill-pantheon-pink"
       )} />}
       label="Like"
       isActive={isActive}
-      feedback="Added to Liked"
+      feedback="Added to My Likes"
       showFeedback={showFeedback}
     />
   );

@@ -1,54 +1,136 @@
 import { Search } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { BrandLogo } from "./ui/brand-logo";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 export function Navbar() {
-  const [isSearchExpanded, setIsSearchExpanded] = useState(false);
+  const [isScrolled, setIsScrolled] = useState(false);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      const scrollPosition = window.scrollY;
+      setIsScrolled(scrollPosition > 20);
+    };
+
+    window.addEventListener('scroll', handleScroll);
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
 
   return (
-    <nav className="fixed top-0 w-full z-50 transition-all duration-300 bg-white/70 dark:bg-pantheon-night/70 backdrop-blur-md shadow-sm border-b border-white/10 dark:border-pantheon-night/10">
-      <div className="max-w-[2000px] mx-auto px-12 sm:px-14 lg:px-16">
+    <nav 
+      className={cn(
+        "fixed top-0 w-full z-50",
+        "transition-[background,backdrop-filter] duration-300 ease-out will-change-[background,backdrop-filter]",
+        isScrolled 
+          ? "bg-white/10 backdrop-blur-md" 
+          : "bg-gradient-to-b from-black/30 via-black/10 to-transparent backdrop-blur-[2px]"
+      )}
+      style={{
+        WebkitBackdropFilter: isScrolled ? "blur(8px)" : "blur(2px)",
+      }}
+    >
+      {/* Glass overlay - single layer with transition */}
+      <div 
+        className={cn(
+          "absolute inset-0 transition-opacity duration-300 ease-out",
+          isScrolled 
+            ? "opacity-100 bg-gradient-to-b from-white/5 to-transparent" 
+            : "opacity-0"
+        )}
+        style={{
+          maskImage: "linear-gradient(to bottom, black, transparent)",
+          WebkitMaskImage: "linear-gradient(to bottom, black, transparent)"
+        }}
+      />
+      
+      <div className="max-w-[2000px] mx-auto px-12 sm:px-14 lg:px-16 relative">
         <div className="flex items-center justify-between h-16">
           <div className="flex items-center gap-8">
             <BrandLogo />
-            <div className="hidden md:flex items-center gap-6">
-              <a href="#" className="text-pantheon-night/80 dark:text-white/80 hover:text-pantheon-purple dark:hover:text-pantheon-purple transition-colors font-medium">About</a>
-              <a href="#" className="text-pantheon-night/80 dark:text-white/80 hover:text-pantheon-purple dark:hover:text-pantheon-purple transition-colors font-medium">Services</a>
-              <a href="#" className="text-pantheon-night/80 dark:text-white/80 hover:text-pantheon-purple dark:hover:text-pantheon-purple transition-colors font-medium">Community</a>
-              <a href="#" className="text-pantheon-night/80 dark:text-white/80 hover:text-pantheon-purple dark:hover:text-pantheon-purple transition-colors font-medium">Activated Entertainment</a>
+            <div className="hidden md:flex items-center gap-8">
+              <a href="#" className={cn(
+                "transition-colors duration-200",
+                "text-sm tracking-wide font-light",
+                isScrolled
+                  ? "text-white hover:text-white"
+                  : "text-white/95 hover:text-white"
+              )}>About</a>
+              <a href="#" className={cn(
+                "transition-colors duration-200",
+                "text-sm tracking-wide font-light",
+                isScrolled
+                  ? "text-white hover:text-white"
+                  : "text-white/95 hover:text-white"
+              )}>Services</a>
+              <a href="#" className={cn(
+                "transition-colors duration-200",
+                "text-sm tracking-wide font-light",
+                isScrolled
+                  ? "text-white hover:text-white"
+                  : "text-white/95 hover:text-white"
+              )}>Community</a>
+              <a href="#" className={cn(
+                "transition-colors duration-200",
+                "text-sm tracking-wide font-light",
+                isScrolled
+                  ? "text-white hover:text-white"
+                  : "text-white/95 hover:text-white"
+              )}>Activated Entertainment</a>
             </div>
           </div>
           <div className="flex items-center gap-4">
-            <div className={cn(
-              "flex items-center transition-all duration-300 ease-in-out",
-              "bg-white/20 dark:bg-pantheon-night/30 hover:bg-white/30 dark:hover:bg-pantheon-night/50 rounded-full backdrop-blur-sm border border-white/10 dark:border-pantheon-night/10",
-              isSearchExpanded ? "w-64 px-4" : "w-10 px-2"
-            )}>
-              <button 
-                className="text-pantheon-night/80 dark:text-white/80 hover:text-pantheon-purple dark:hover:text-pantheon-purple transition-colors p-2"
-                onClick={() => setIsSearchExpanded(true)}
-              >
-                <Search className="w-5 h-5" />
-              </button>
-              <input
-                type="text"
-                placeholder="Search..."
-                className={cn(
-                  "bg-transparent text-pantheon-night dark:text-white outline-none w-full transition-all duration-300",
-                  "placeholder:text-pantheon-night/50 dark:placeholder:text-white/50",
-                  isSearchExpanded ? "ml-2 opacity-100" : "w-0 opacity-0"
-                )}
-                onBlur={() => setIsSearchExpanded(false)}
+            <div 
+              className={cn(
+                "flex items-center relative",
+                "transition-all duration-300 ease-out",
+                "rounded-full overflow-hidden",
+                "w-64"
+              )}
+            >
+              {/* Glass effect background */}
+              <div className={cn(
+                "absolute inset-0 transition-all duration-300 ease-out",
+                isScrolled
+                  ? "bg-white/5 backdrop-blur-[8px]"
+                  : "bg-black/20 backdrop-blur-[2px]"
+              )}
+              style={{
+                WebkitBackdropFilter: isScrolled ? "blur(8px)" : "blur(2px)",
+              }}
               />
+              
+              {/* Content container */}
+              <div className={cn(
+                "flex items-center w-full h-full relative px-4 py-1.5",
+                "transition-all duration-300 ease-out",
+                isScrolled
+                  ? "hover:bg-white/5"
+                  : "hover:bg-black/30"
+              )}>
+                <Search className="w-5 h-5 text-white" />
+                <input
+                  type="text"
+                  placeholder="Search..."
+                  className={cn(
+                    "bg-transparent outline-none ml-2",
+                    "text-white placeholder:text-white/60",
+                    "w-full text-sm font-light h-6"
+                  )}
+                />
+              </div>
             </div>
+
             <button 
               className={cn(
-                "px-4 py-2 rounded-full font-medium transition-all duration-300",
+                "px-4 py-2 rounded-full",
+                "transition-[backdrop-filter,border,box-shadow] duration-300 ease-out",
                 "bg-gradient-lotus text-white",
                 "hover:shadow-lg hover:shadow-pantheon-pink/20",
                 "active:scale-95",
-                "backdrop-blur-sm border border-white/10"
+                "text-sm tracking-wide",
+                isScrolled 
+                  ? "backdrop-blur-md border border-white/10"
+                  : "backdrop-blur-sm"
               )}
             >
               BOOK A CALL

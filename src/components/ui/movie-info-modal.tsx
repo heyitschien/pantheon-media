@@ -3,7 +3,7 @@ import {
   DialogContent,
   DialogDescription,
 } from "./dialog";
-import { Play, Plus, ThumbsUp, VolumeX, Volume2, X } from "lucide-react";
+import { Play, Eye, Heart, VolumeX, Volume2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { theme } from "@/config/theme";
 import { useState, useRef, useEffect, useCallback } from "react";
