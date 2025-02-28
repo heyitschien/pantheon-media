@@ -5,6 +5,7 @@ import { useState, useRef } from "react";
 interface MovieRowProps {
   title: string;
   movies: Array<{
+    id?: string;
     title: string;
     image: string;
     description: string;
@@ -15,6 +16,7 @@ interface MovieRowProps {
     isPrismOriginal?: boolean;
     isNew?: boolean;
     hasWonAward?: boolean;
+    match?: number;
   }>;
 }
 
@@ -81,7 +83,20 @@ export function MovieRow({ title, movies }: MovieRowProps) {
                 className="flex-none w-[300px] relative group/card overflow-visible"
               >
                 <div className="relative overflow-visible">
-                  <MovieCard {...movie} />
+                  <MovieCard 
+                    id={movie.id || `movie-${index}`}
+                    title={movie.title}
+                    image={movie.image}
+                    description={movie.description}
+                    rating={movie.rating}
+                    duration={movie.duration}
+                    year={movie.year}
+                    genres={movie.genres}
+                    isPrismOriginal={movie.isPrismOriginal}
+                    isNew={movie.isNew}
+                    hasWonAward={movie.hasWonAward}
+                    match={movie.match || 90}
+                  />
                 </div>
               </div>
             ))}

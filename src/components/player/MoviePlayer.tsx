@@ -1,9 +1,10 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { 
   Play, Pause, Volume2, VolumeX, Maximize, Minimize, Settings,
-  PictureInPicture2, ChevronRight, FastForward, Rewind
+  PictureInPicture2, ChevronRight, FastForward, Rewind, X
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useNavigate } from 'react-router-dom';
 
 interface MoviePlayerProps {
   src: string;
@@ -20,6 +21,7 @@ export function MoviePlayer({
   onClose,
   className
 }: MoviePlayerProps) {
+  const navigate = useNavigate();
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -32,10 +34,13 @@ export function MoviePlayer({
   const [showSettings, setShowSettings] = useState(false);
   const [playbackSpeed, setPlaybackSpeed] = useState(1);
   const [quality, setQuality] = useState<'auto' | '1080p' | '720p' | '480p'>('auto');
+  const [retryCount, setRetryCount] = useState(0);
+  const maxRetries = 3;
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const playerRef = useRef<HTMLDivElement>(null);
   const controlsTimeoutRef = useRef<NodeJS.Timeout>();
+  const retryTimeoutRef = useRef<NodeJS.Timeout>();
 
   // Playback speed options
   const speedOptions = [0.5, 0.75, 1, 1.25, 1.5, 2];
@@ -73,31 +78,51 @@ export function MoviePlayer({
           const prevSpeed = speedOptions[speedOptions.indexOf(playbackSpeed) - 1];
           if (prevSpeed) setPlaybackSpeed(prevSpeed);
           break;
+        case 'escape':
+          if (onClose) onClose();
+          break;
       }
     };
 
     window.addEventListener('keydown', handleKeyPress);
     return () => window.removeEventListener('keydown', handleKeyPress);
-  }, [playbackSpeed]);
+  }, [playbackSpeed, onClose]);
 
   // Handle play/pause
-  const togglePlay = () => {
-    if (videoRef.current) {
+  const togglePlay = useCallback(async () => {
+    if (!videoRef.current) return;
+
+    try {
       if (isPlaying) {
-        videoRef.current.pause();
+        await videoRef.current.pause();
       } else {
-        videoRef.current.play();
+        const playPromise = videoRef.current.play();
+        if (playPromise) {
+          await playPromise;
+        }
+      }
+    } catch (error) {
+      console.error('Playback error:', error);
+      setError('Failed to play video. Please try again.');
+      
+      // Retry logic
+      if (retryCount < maxRetries) {
+        setRetryCount(prev => prev + 1);
+        retryTimeoutRef.current = setTimeout(() => {
+          setError(null);
+          togglePlay();
+        }, 1000);
       }
     }
-  };
+  }, [isPlaying, retryCount, maxRetries]);
 
   // Handle mute toggle
-  const toggleMute = () => {
+  const toggleMute = useCallback(() => {
     if (videoRef.current) {
       videoRef.current.muted = !isMuted;
       setIsMuted(!isMuted);
     }
-  };
+  }, [isMuted]);
 
   // Handle Picture-in-Picture
   const togglePiP = async () => {
@@ -113,6 +138,7 @@ export function MoviePlayer({
       }
     } catch (err) {
       console.error('PiP failed:', err);
+      setError('Picture-in-Picture mode is not available');
     }
   };
 
@@ -120,24 +146,21 @@ export function MoviePlayer({
   const toggleFullscreen = async () => {
     if (!playerRef.current) return;
 
-    if (!isFullscreen) {
-      try {
+    try {
+      if (!isFullscreen) {
         if (playerRef.current.requestFullscreen) {
           await playerRef.current.requestFullscreen();
         }
         setIsFullscreen(true);
-      } catch (err) {
-        console.error('Failed to enter fullscreen:', err);
-      }
-    } else {
-      try {
+      } else {
         if (document.exitFullscreen) {
           await document.exitFullscreen();
         }
         setIsFullscreen(false);
-      } catch (err) {
-        console.error('Failed to exit fullscreen:', err);
       }
+    } catch (err) {
+      console.error('Fullscreen failed:', err);
+      setError('Fullscreen mode is not available');
     }
   };
 
@@ -179,11 +202,11 @@ export function MoviePlayer({
         clearTimeout(controlsTimeoutRef.current);
       }
 
-      controlsTimeoutRef.current = setTimeout(() => {
-        if (isPlaying) {
+      if (isPlaying) {
+        controlsTimeoutRef.current = setTimeout(() => {
           setShowControls(false);
-        }
-      }, 3000);
+        }, 3000);
+      }
     };
 
     const player = playerRef.current;
@@ -214,10 +237,33 @@ export function MoviePlayer({
     const handleCanPlay = () => {
       setIsLoading(false);
       setDuration(video.duration);
+      setError(null);
+      setRetryCount(0);
+      
+      // Try to auto-play muted first
+      video.muted = true;
+      video.play().then(() => {
+        // Successfully started playing
+        setIsPlaying(true);
+      }).catch(error => {
+        console.warn('Auto-play failed:', error);
+        setError('Click play to start video');
+        setIsPlaying(false);
+      });
     };
     const handleError = () => {
-      setError('Failed to load video');
+      console.error('Video error:', video.error);
+      setError('Failed to load video. Please try again.');
       setIsLoading(false);
+      
+      // Retry logic
+      if (retryCount < maxRetries) {
+        setRetryCount(prev => prev + 1);
+        retryTimeoutRef.current = setTimeout(() => {
+          setError(null);
+          video.load();
+        }, 1000);
+      }
     };
 
     video.addEventListener('play', handlePlay);
@@ -226,14 +272,21 @@ export function MoviePlayer({
     video.addEventListener('canplay', handleCanPlay);
     video.addEventListener('error', handleError);
 
+    // Initial load
+    video.load();
+
     return () => {
       video.removeEventListener('play', handlePlay);
       video.removeEventListener('pause', handlePause);
       video.removeEventListener('loadstart', handleLoadStart);
       video.removeEventListener('canplay', handleCanPlay);
       video.removeEventListener('error', handleError);
+      
+      if (retryTimeoutRef.current) {
+        clearTimeout(retryTimeoutRef.current);
+      }
     };
-  }, []);
+  }, [retryCount, maxRetries]);
 
   // Format time
   const formatTime = (seconds: number) => {
@@ -241,6 +294,18 @@ export function MoviePlayer({
     const remainingSeconds = Math.floor(seconds % 60);
     return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
   };
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (retryTimeoutRef.current) {
+        clearTimeout(retryTimeoutRef.current);
+      }
+      if (controlsTimeoutRef.current) {
+        clearTimeout(controlsTimeoutRef.current);
+      }
+    };
+  }, []);
 
   return (
     <div 
@@ -259,6 +324,30 @@ export function MoviePlayer({
         className="w-full h-full object-cover"
         onClick={togglePlay}
         onTimeUpdate={handleTimeUpdate}
+        crossOrigin="anonymous"
+        playsInline
+        preload="metadata"
+        muted
+        onError={(e) => {
+          const video = e.currentTarget;
+          console.error('Video error details:', {
+            error: video.error,
+            networkState: video.networkState,
+            readyState: video.readyState,
+            src: video.src,
+            currentTime: video.currentTime,
+          });
+          setError(`Failed to load video: ${video.error?.message || 'Unknown error'}`);
+          setIsLoading(false);
+        }}
+        onLoadStart={() => {
+          console.log('Video load started:', {
+            src,
+            poster,
+            crossOrigin: 'anonymous'
+          });
+          setIsLoading(true);
+        }}
       />
 
       {/* Loading Overlay */}
@@ -275,11 +364,12 @@ export function MoviePlayer({
           <button
             onClick={() => {
               setError(null);
+              setRetryCount(0);
               if (videoRef.current) {
                 videoRef.current.load();
               }
             }}
-            className="px-4 py-2 bg-white text-black rounded-md"
+            className="px-4 py-2 bg-white text-black rounded-md hover:bg-white/90 transition-colors"
           >
             Retry
           </button>
@@ -295,21 +385,28 @@ export function MoviePlayer({
         )}
       >
         {/* Title Bar */}
-        {title && (
-          <div className="absolute top-0 left-0 right-0 p-4">
-            <h2 className="text-white text-lg font-medium">{title}</h2>
-          </div>
-        )}
+        <div className="absolute top-0 left-0 right-0 p-4 flex items-center justify-between">
+          <h2 className="text-white text-lg font-medium">{title}</h2>
+          {onClose && (
+            <button
+              onClick={onClose}
+              className="text-white/80 hover:text-white transition-colors"
+              aria-label="Close player"
+            >
+              <X className="w-6 h-6" />
+            </button>
+          )}
+        </div>
 
         {/* Bottom Controls */}
         <div className="absolute bottom-0 left-0 right-0 p-4">
           {/* Progress Bar */}
           <div 
-            className="w-full h-1 bg-white/20 rounded-full mb-4 cursor-pointer"
+            className="w-full h-1 bg-white/20 rounded-full mb-4 cursor-pointer group"
             onClick={handleSeek}
           >
             <div 
-              className="h-full bg-white rounded-full"
+              className="h-full bg-white rounded-full group-hover:bg-pantheon-pink transition-colors"
               style={{ width: `${progress}%` }}
             />
           </div>

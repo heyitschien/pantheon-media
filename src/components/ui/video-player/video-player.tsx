@@ -1,6 +1,7 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { Play, Info, Volume2, VolumeX } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import Hls from 'hls.js';
 
 interface VideoPlayerProps {
   title: string;
@@ -25,18 +26,136 @@ export function VideoPlayer({
   const [isMuted, setIsMuted] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isInitialLoading, setIsInitialLoading] = useState(true);
+  const [currentQuality, setCurrentQuality] = useState<number>(-1);
   const videoRef = useRef<HTMLVideoElement>(null);
-  const transitionTimeoutRef = useRef<NodeJS.Timeout>();
+  const hlsRef = useRef<Hls | null>(null);
 
-  useEffect(() => {
-    if (videoRef.current) {
-      // Only call load in non-test environment
-      if (process.env.NODE_ENV !== 'test') {
-        videoRef.current.load();
+  // Initialize HLS with enhanced configuration
+  const initHls = useCallback(() => {
+    if (!videoRef.current || !video) return;
+
+    try {
+      if (Hls.isSupported()) {
+        console.log('Initializing HLS with source:', video);
+
+        // Cleanup previous instance
+        if (hlsRef.current) {
+          hlsRef.current.destroy();
+        }
+
+        const hls = new Hls({
+          debug: true,
+          enableWorker: true,
+          lowLatencyMode: true,
+          backBufferLength: 90,
+          maxBufferSize: 0,
+          maxBufferLength: 30,
+          maxMaxBufferLength: 600,
+          startLevel: -1,
+          manifestLoadingTimeOut: 10000,
+          manifestLoadingMaxRetry: 3,
+          manifestLoadingRetryDelay: 500,
+          levelLoadingTimeOut: 10000,
+          levelLoadingMaxRetry: 3,
+          levelLoadingRetryDelay: 500
+        });
+
+        hlsRef.current = hls;
+
+        // Setup event listeners
+        hls.on(Hls.Events.MEDIA_ATTACHED, () => {
+          console.log('HLS: Media attached');
+          hls.loadSource(video);
+        });
+
+        hls.on(Hls.Events.MANIFEST_PARSED, (event, data) => {
+          console.log('HLS: Manifest parsed, levels:', data.levels);
+          setIsVideoLoaded(true);
+          setIsInitialLoading(false);
+          
+          if (videoRef.current) {
+            videoRef.current.muted = isMuted;
+            if (!isTransitioning) {
+              videoRef.current.play()
+                .then(() => {
+                  console.log('Playback started successfully');
+                  setShowVideo(true);
+                })
+                .catch(error => {
+                  console.error('Play failed:', error);
+                  setError('Unable to start playback');
+                });
+            }
+          }
+        });
+
+        hls.on(Hls.Events.ERROR, (event, data) => {
+          console.error('HLS Error:', data);
+          if (data.fatal) {
+            switch (data.type) {
+              case Hls.ErrorTypes.NETWORK_ERROR:
+                console.log('HLS: Fatal network error encountered, trying to recover');
+                hls.startLoad();
+                break;
+              case Hls.ErrorTypes.MEDIA_ERROR:
+                console.log('HLS: Fatal media error encountered, trying to recover');
+                hls.recoverMediaError();
+                break;
+              default:
+                console.log('HLS: Fatal error, cannot recover');
+                hls.destroy();
+                setError('Failed to load video stream');
+                break;
+            }
+          }
+        });
+
+        // Quality selection
+        hls.on(Hls.Events.LEVEL_SWITCHED, (event, data) => {
+          setCurrentQuality(data.level);
+          console.log('Quality Level Changed:', data.level);
+        });
+
+        // Attach media
+        hls.attachMedia(videoRef.current);
+
+      } else if (videoRef.current.canPlayType('application/vnd.apple.mpegurl')) {
+        // Native HLS support (Safari)
+        console.log('Using native HLS support');
+        videoRef.current.src = video;
+        videoRef.current.addEventListener('loadedmetadata', () => {
+          setIsVideoLoaded(true);
+          setIsInitialLoading(false);
+          if (!isTransitioning && videoRef.current) {
+            videoRef.current.muted = isMuted;
+            videoRef.current.play()
+              .then(() => setShowVideo(true))
+              .catch(error => {
+                console.error('Native playback failed:', error);
+                setError('Unable to start playback');
+              });
+          }
+        });
+      } else {
+        console.error('HLS is not supported in this browser');
+        setError('Your browser does not support video playback');
       }
-      videoRef.current.muted = isMuted;
+    } catch (error) {
+      console.error('Error initializing video player:', error);
+      setError('Failed to initialize video player');
     }
-  }, [video, isMuted]);
+  }, [video, isMuted, isTransitioning]);
+
+  // Initialize on mount or video change
+  useEffect(() => {
+    initHls();
+
+    return () => {
+      if (hlsRef.current) {
+        hlsRef.current.destroy();
+      }
+    };
+  }, [initHls]);
 
   const handleVideoLoaded = () => {
     setIsVideoLoaded(true);
@@ -137,10 +256,7 @@ export function VideoPlayer({
             autoPlay
             playsInline
             data-testid="video-element"
-          >
-            <source src={video} type="video/mp4" />
-            Your browser does not support the video tag.
-          </video>
+          />
 
           {/* Mute/Unmute Button */}
           <button

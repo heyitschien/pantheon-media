@@ -1,7 +1,7 @@
 import { Movie } from '../types/movie';
 
 export const PANTHEON_HIGHLIGHTS: Movie = {
-  id: "pantheon-highlights-2024",
+  id: "13904fa8-dda5-4e9e-88c4-0d57fa9af6c4",
   title: "Pantheon Highlights",
   image: "/first-movie-card.png",
   description: "Journey through Pantheon Media's most compelling stories of impact and transformation. From sacred ceremonies to conscious business leaders, witness how our cinematic lens captures the essence of regenerative living. This showcase features our work with forward-thinking brands who are pioneering a new paradigm where profit meets purpose, and storytelling ignites positive change.",

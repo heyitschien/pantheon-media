@@ -1,9 +1,10 @@
 import { Play, Info, Volume2, VolumeX } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
-import { getSpaceVideo } from "../services/pexels";
+import { getHeroVideo } from "@/services/bunny-stream";
 import { usePlayer } from "@/contexts/PlayerContext";
 import { MovieInfoModal } from "./ui/movie-info-modal";
 import { PANTHEON_HIGHLIGHTS } from "@/data/movies";
+import Hls from "hls.js";
 
 interface HeroAsset {
   type: 'image' | 'video';
@@ -27,6 +28,9 @@ export function Hero() {
   const [isMuted, setIsMuted] = useState(true);
   const [isVideoEnded, setIsVideoEnded] = useState(false);
   
+  // HLS state
+  const hlsRef = useRef<Hls | null>(null);
+  
   // Transition states
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [isReverseTransitioning, setIsReverseTransitioning] = useState(false);
@@ -46,24 +50,6 @@ export function Hero() {
   // Context
   const { playMovie } = usePlayer();
 
-  // Load video asset
-  useEffect(() => {
-    const loadVideo = async () => {
-      try {
-        const { videoUrl, posterUrl } = await getSpaceVideo();
-        setVideoAsset({
-          type: 'video',
-          url: videoUrl,
-          fallback: posterUrl
-        });
-      } catch (error) {
-        console.error('Failed to load video:', error);
-      }
-    };
-
-    loadVideo();
-  }, []);
-
   // Reset function to ensure clean state
   const resetAllStates = () => {
     setShowVideo(false);
@@ -76,35 +62,124 @@ export function Hero() {
     if (videoRef.current) {
       videoRef.current.currentTime = 0;
     }
+    // Destroy HLS instance if it exists
+    if (hlsRef.current) {
+      hlsRef.current.destroy();
+      hlsRef.current = null;
+    }
+  };
+
+  // Load video asset
+  useEffect(() => {
+    const loadVideo = async () => {
+      try {
+        const { videoUrl, posterUrl } = await getHeroVideo();
+        setVideoAsset({
+          type: 'video',
+          url: videoUrl,
+          fallback: posterUrl
+        });
+        setIsInitialLoading(false);
+      } catch (error) {
+        console.error('Failed to load video:', error);
+        setIsInitialLoading(false);
+      }
+    };
+
+    loadVideo();
+
+    // Cleanup on unmount
+    return () => {
+      resetAllStates();
+    };
+  }, []);
+
+  // Initialize HLS
+  const initHls = async (videoUrl: string) => {
+    if (!videoRef.current) return;
+
+    try {
+      // Create new HLS instance
+      if (hlsRef.current) {
+        hlsRef.current.destroy();
+      }
+
+      const hls = new Hls({
+        enableWorker: true,
+        lowLatencyMode: true,
+      });
+
+      hls.on(Hls.Events.ERROR, (event, data) => {
+        console.error('HLS error:', data);
+        if (data.fatal) {
+          switch (data.type) {
+            case Hls.ErrorTypes.NETWORK_ERROR:
+              console.error('HLS network error, attempting to recover...');
+              hls.startLoad();
+              break;
+            case Hls.ErrorTypes.MEDIA_ERROR:
+              console.error('HLS media error, attempting to recover...');
+              hls.recoverMediaError();
+              break;
+            default:
+              console.error('Fatal HLS error, destroying...');
+              hls.destroy();
+              break;
+          }
+        }
+      });
+
+      hls.on(Hls.Events.MANIFEST_PARSED, () => {
+        console.log('HLS manifest loaded');
+        setIsVideoLoaded(true);
+        if (videoRef.current) {
+          videoRef.current.play().catch(console.error);
+        }
+      });
+
+      hls.loadSource(videoUrl);
+      hls.attachMedia(videoRef.current);
+      hlsRef.current = hls;
+
+    } catch (error) {
+      console.error('Failed to initialize HLS:', error);
+      resetAllStates();
+    }
   };
 
   // Handle video initialization
   useEffect(() => {
-    if (videoRef.current && videoAsset) {
-      videoRef.current.load();
-      videoRef.current.muted = true;
-    }
+    if (!videoAsset || !videoRef.current) return;
 
-    if (isVideoLoaded && videoAsset && videoRef.current) {
-      resetAllStates(); // Reset states before starting new video
-      
-      const playVideo = async () => {
-        try {
-          await videoRef.current?.play();
-          setShowVideo(true);
-        } catch (error) {
-          console.error('Failed to play video:', error);
-          resetAllStates(); // Reset on error
+    const initVideo = async () => {
+      try {
+        resetAllStates(); // Reset states before starting new video
+        
+        if (Hls.isSupported()) {
+          await initHls(videoAsset.url);
+        } else if (videoRef.current.canPlayType('application/vnd.apple.mpegurl')) {
+          // For Safari - native HLS support
+          videoRef.current.src = videoAsset.url;
+          videoRef.current.load();
+          await videoRef.current.play();
+        } else {
+          console.error('HLS is not supported in this browser');
+          return;
         }
-      };
 
-      const timer = setTimeout(playVideo, 3000);
-      return () => {
-        clearTimeout(timer);
-        resetAllStates(); // Clean up on unmount
-      };
-    }
-  }, [isVideoLoaded, videoAsset]);
+        setShowVideo(true);
+      } catch (error) {
+        console.error('Failed to initialize video:', error);
+        resetAllStates();
+      }
+    };
+
+    initVideo();
+
+    return () => {
+      resetAllStates();
+    };
+  }, [videoAsset]);
 
   // Handle compact mode transition
   useEffect(() => {
@@ -222,7 +297,7 @@ export function Hero() {
 
   const handlePlayClick = async () => {
     try {
-      const { videoUrl, posterUrl } = await getSpaceVideo();
+      const { videoUrl, posterUrl } = await getHeroVideo();
       playMovie({
         videoUrl,
         posterUrl,
@@ -297,16 +372,19 @@ export function Hero() {
             >
               <video
                 ref={videoRef}
-                autoPlay
                 muted
                 playsInline
                 poster={videoAsset.fallback}
                 className="w-full h-full object-cover"
-                onLoadedData={handleVideoLoaded}
                 onTimeUpdate={handleTimeUpdate}
                 onEnded={() => setIsVideoEnded(true)}
+                onError={(e) => {
+                  console.error('Video error:', e);
+                  resetAllStates();
+                }}
               >
                 <source src={videoAsset.url} type="video/mp4" />
+                Your browser does not support the video tag.
               </video>
 
               <button

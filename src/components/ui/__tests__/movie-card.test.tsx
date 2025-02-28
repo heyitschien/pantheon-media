@@ -1,10 +1,11 @@
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { MovieCard } from '../movie-card';
-import { getPreviewVideo } from '@/services/pexels';
+import { getPreviewVideo } from '@/services/youtube';
 import { BrowserRouter, Routes, Route, MemoryRouter, useLocation, useNavigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { PlayerProvider, usePlayer } from '@/contexts/PlayerContext';
+import { TestWrapper } from '@/test/test-wrapper';
 
 // Mock the PlayerContext
 const mockPlayMovie = vi.fn();
@@ -31,11 +32,11 @@ vi.mock('@/contexts/PlayerContext', () => {
   };
 });
 
-// Mock the Pexels service
-vi.mock('@/services/pexels', () => ({
+// Mock the YouTube service
+vi.mock('@/services/youtube', () => ({
   getPreviewVideo: vi.fn().mockResolvedValue({
-    videoUrl: 'test-video-url',
-    posterUrl: 'test-poster-url'
+    videoUrl: 'https://www.youtube.com/embed/test-video-id',
+    posterUrl: 'https://img.youtube.com/vi/test-video-id/maxresdefault.jpg'
   }),
 }));
 
@@ -45,8 +46,8 @@ vi.mock('@/hooks/use-toast', () => ({
 }));
 
 const mockPreviewVideo = {
-  videoUrl: 'test-video-url',
-  posterUrl: 'test-poster-url',
+  videoUrl: 'https://www.youtube.com/embed/test-video-id',
+  posterUrl: 'https://img.youtube.com/vi/test-video-id/maxresdefault.jpg',
 };
 
 // Location tracker component for testing navigation
@@ -101,6 +102,14 @@ const renderWithProviders = (ui: React.ReactElement) => {
   return render(ui, { wrapper: TestWrapper });
 };
 
+// Mock the R2 video service
+vi.mock('@/services/r2-video', () => ({
+  getPreviewVideo: vi.fn().mockResolvedValue({
+    videoUrl: 'https://pub-c7a57d8c8fcd46d49a3c19c14f9ec28b.r2.dev/pantheon-media-assets/pantheon-highlight.mp4',
+    posterUrl: 'https://pub-c7a57d8c8fcd46d49a3c19c14f9ec28b.r2.dev/pantheon-media-assets/pantheon-highlight-poster.jpg'
+  })
+}));
+
 describe('MovieCard', () => {
   const mockProps = {
     id: 'test-movie-1',
@@ -117,7 +126,6 @@ describe('MovieCard', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    (getPreviewVideo as ReturnType<typeof vi.fn>).mockResolvedValue(mockPreviewVideo);
   });
 
   describe('Base State (Before Hover)', () => {
@@ -387,43 +395,37 @@ describe('MovieCard', () => {
   });
 
   describe('Hover Preview Card', () => {
-    it('shows preview card with correct dimensions and position', async () => {
+    it('shows preview card with YouTube iframe on hover', async () => {
       renderWithProviders(<MovieCard {...mockProps} />);
       
       const card = screen.getByTestId('movie-card');
       fireEvent.mouseEnter(card);
       
       await waitFor(() => {
-        const previewCard = card.querySelector('.absolute.w-[120%]');
+        const previewCard = screen.getByTestId('preview-card');
         expect(previewCard).toBeInTheDocument();
-        expect(previewCard).toHaveClass(
-          'transition-all',
-          'duration-300',
-          'origin-bottom-left',
-          'scale-110',
-          'opacity-100'
-        );
+      });
+
+      await waitFor(() => {
+        const iframe = screen.getByTestId('preview-video');
+        expect(iframe).toBeInTheDocument();
+        expect(iframe).toHaveAttribute('src', 'https://www.youtube.com/embed/test-video-id');
       });
     });
 
-    it('handles rapid hover state changes', async () => {
+    it('handles YouTube video loading errors gracefully', async () => {
+      // Mock the preview video service to fail
+      (getPreviewVideo as jest.Mock).mockRejectedValue(new Error('Failed to load video'));
+
       renderWithProviders(<MovieCard {...mockProps} />);
       
       const card = screen.getByTestId('movie-card');
-      
-      // Rapid hover in/out
       fireEvent.mouseEnter(card);
-      fireEvent.mouseLeave(card);
-      fireEvent.mouseEnter(card);
-      
+
       await waitFor(() => {
-        const previewCard = card.querySelector('.absolute.w-[120%]');
-        expect(previewCard).toBeInTheDocument();
+        const errorMessage = screen.getByText(/unable to load preview/i);
+        expect(errorMessage).toBeInTheDocument();
       });
-      
-      // Verify video state is managed correctly
-      const video = screen.getByTestId('preview-video');
-      expect(video).toHaveAttribute('src', mockPreviewVideo.videoUrl);
     });
 
     it('cleans up resources when unmounting during hover', async () => {
@@ -499,8 +501,8 @@ describe('MovieCard', () => {
     it('transitions from fallback to video smoothly', async () => {
       // Mock the preview video service
       (getPreviewVideo as jest.Mock).mockResolvedValue({
-        videoUrl: 'test-video-url',
-        posterUrl: 'test-poster-url'
+        videoUrl: 'https://www.youtube.com/embed/test-video-id',
+        posterUrl: 'https://img.youtube.com/vi/test-video-id/maxresdefault.jpg'
       });
 
       const { getByTestId } = render(
@@ -526,7 +528,7 @@ describe('MovieCard', () => {
         
         expect(fallbackImage).toHaveClass('opacity-100');
         expect(previewVideo).toHaveClass('opacity-0');
-        expect(previewVideo).toHaveAttribute('src', 'test-video-url');
+        expect(previewVideo).toHaveAttribute('src', 'https://www.youtube.com/embed/test-video-id');
       });
       
       // Mock video play behavior
@@ -750,7 +752,6 @@ describe('MovieCard', () => {
 
     beforeEach(() => {
       vi.clearAllMocks();
-      (getPreviewVideo as ReturnType<typeof vi.fn>).mockResolvedValue(mockPreviewVideo);
     });
 
     describe('1. Initial Hover Interaction', () => {
@@ -880,8 +881,8 @@ describe('MovieCard', () => {
 
       it('transitions from fallback to video smoothly', async () => {
         const mockVideo = {
-          videoUrl: 'test-video-url',
-          posterUrl: 'test-poster-url'
+          videoUrl: 'https://www.youtube.com/embed/test-video-id',
+          posterUrl: 'https://img.youtube.com/vi/test-video-id/maxresdefault.jpg'
         };
 
         // Mock the preview video service
@@ -1177,6 +1178,62 @@ describe('MovieCard', () => {
           expect(card.querySelector('.absolute.w-[120%]')).not.toBeInTheDocument();
           expect(screen.queryByTestId('preview-video')).not.toBeInTheDocument();
         });
+      });
+    });
+  });
+
+  describe('Video Preview', () => {
+    it('loads and plays video on hover', async () => {
+      const { getByTestId } = render(
+        <TestWrapper>
+          <MovieCard {...mockProps} />
+        </TestWrapper>
+      );
+
+      // Trigger hover
+      fireEvent.mouseEnter(getByTestId('movie-card'));
+
+      // Wait for video to be loaded
+      await waitFor(() => {
+        const video = getByTestId('preview-video') as HTMLVideoElement;
+        expect(video).toBeInTheDocument();
+        expect(video.src).toContain('pantheon-highlight.mp4');
+      });
+    });
+
+    it('shows loading state while video loads', async () => {
+      const { getByTestId } = render(
+        <TestWrapper>
+          <MovieCard {...mockProps} />
+        </TestWrapper>
+      );
+
+      // Trigger hover
+      fireEvent.mouseEnter(getByTestId('movie-card'));
+
+      // Check for loading state
+      await waitFor(() => {
+        const loadingSpinner = getByTestId('preview-loading');
+        expect(loadingSpinner).toBeInTheDocument();
+      });
+    });
+
+    it('handles video load errors gracefully', async () => {
+      // Mock a failed video load
+      vi.mocked(getPreviewVideo).mockRejectedValueOnce(new Error('Failed to load video'));
+
+      const { getByTestId, getByText } = render(
+        <TestWrapper>
+          <MovieCard {...mockProps} />
+        </TestWrapper>
+      );
+
+      // Trigger hover
+      fireEvent.mouseEnter(getByTestId('movie-card'));
+
+      // Check for error message
+      await waitFor(() => {
+        expect(getByText('Unable to load preview. Please try again later.')).toBeInTheDocument();
       });
     });
   });

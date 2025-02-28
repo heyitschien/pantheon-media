@@ -2,15 +2,17 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogTitle,
 } from "./dialog";
 import { Play, Eye, Heart, VolumeX, Volume2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { theme } from "@/config/theme";
 import { useState, useRef, useEffect, useCallback } from "react";
-import { getPreviewVideo } from "@/services/pexels";
+import { getPreviewVideo } from "@/services/bunny-stream";
 import { usePlayer } from "@/contexts/PlayerContext";
 import { useToast } from "@/hooks/use-toast";
 import { PlayButton, AddToListButton, LikeButton, VolumeButton } from "./movie-controls";
+import Hls from 'hls.js';
 
 interface MovieInfoModalProps {
   isOpen: boolean;
@@ -50,35 +52,73 @@ export function MovieInfoModal({ isOpen, onClose, movie }: MovieInfoModalProps) 
   const { playMovie } = usePlayer();
   const { toast } = useToast();
   const [activeButton, setActiveButton] = useState<string | null>(null);
+  const hlsRef = useRef<Hls | null>(null);
+
+  // Initialize HLS
+  const initHls = useCallback((videoElement: HTMLVideoElement, src: string) => {
+    if (Hls.isSupported()) {
+      if (hlsRef.current) {
+        hlsRef.current.destroy();
+      }
+
+      const hls = new Hls({
+        enableWorker: true,
+        lowLatencyMode: true,
+      });
+
+      hls.attachMedia(videoElement);
+      hls.on(Hls.Events.MEDIA_ATTACHED, () => {
+        hls.loadSource(src);
+      });
+
+      hls.on(Hls.Events.ERROR, (event, data) => {
+        if (data.fatal) {
+          console.error('HLS error:', data);
+          setError('Failed to play video');
+          setShowVideo(false);
+        }
+      });
+
+      hlsRef.current = hls;
+    } else if (videoElement.canPlayType('application/vnd.apple.mpegurl')) {
+      // For Safari
+      videoElement.src = src;
+    }
+  }, []);
 
   // Enhanced fetch preview video function
   const fetchPreviewVideo = useCallback(async () => {
     if (previewVideo && videoRef.current) {
       videoRef.current.currentTime = 0;
       videoRef.current.muted = isMuted;
-      videoRef.current.play();
+      if (Hls.isSupported()) {
+        if (hlsRef.current) {
+          hlsRef.current.loadSource(previewVideo.videoUrl);
+        } else {
+          initHls(videoRef.current, previewVideo.videoUrl);
+        }
+      }
+      videoRef.current.play().catch(console.error);
       setShowVideo(true);
       return;
     }
 
     setIsLoading(true);
     setError(null);
-    setShowVideo(false);
 
     try {
-      const searchQuery = `${movie.title} ${movie.genres?.join(' ')} movie scene`;
-      const video = await getPreviewVideo(searchQuery, {
-        maxDuration: 30,
-        minDuration: 5,
-        orientation: 'landscape',
-      });
+      const video = await getPreviewVideo(movie.title);
       setPreviewVideo(video);
       setRetryCount(0);
       
       if (videoRef.current) {
-        videoRef.current.muted = true;
-        await videoRef.current.play();
-        setShowVideo(true);
+        videoRef.current.muted = isMuted;
+        initHls(videoRef.current, video.videoUrl);
+        const playPromise = videoRef.current.play();
+        if (playPromise !== undefined) {
+          await playPromise;
+          setShowVideo(true);
+        }
       }
     } catch (err) {
       console.error('Failed to load preview:', err);
@@ -91,7 +131,7 @@ export function MovieInfoModal({ isOpen, onClose, movie }: MovieInfoModalProps) 
     } finally {
       setIsLoading(false);
     }
-  }, [movie.title, movie.genres, previewVideo, retryCount, isMuted]);
+  }, [movie.title, previewVideo, retryCount, isMuted, initHls]);
 
   // Enhanced modal open/close effect
   useEffect(() => {
@@ -102,15 +142,21 @@ export function MovieInfoModal({ isOpen, onClose, movie }: MovieInfoModalProps) 
     } else {
       setShowVideo(false);
       setError(null);
+      setPreviewVideo(null);
       if (videoRef.current) {
         videoRef.current.pause();
-        videoRef.current.currentTime = 0;
+      }
+      if (hlsRef.current) {
+        hlsRef.current.destroy();
       }
       setIsMuted(true);
     }
 
     return () => {
       clearTimeout(timeout);
+      if (hlsRef.current) {
+        hlsRef.current.destroy();
+      }
     };
   }, [isOpen, fetchPreviewVideo]);
 
@@ -140,12 +186,7 @@ export function MovieInfoModal({ isOpen, onClose, movie }: MovieInfoModalProps) 
 
   const handlePlay = async () => {
     try {
-      const searchQuery = `${movie.title} ${movie.genres?.join(' ')} movie scene`;
-      const video = await getPreviewVideo(searchQuery, {
-        maxDuration: 30,
-        minDuration: 5,
-        orientation: 'landscape',
-      });
+      const video = await getPreviewVideo(movie.title);
       
       playMovie({
         videoUrl: video.videoUrl,
@@ -175,6 +216,9 @@ export function MovieInfoModal({ isOpen, onClose, movie }: MovieInfoModalProps) 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="max-w-5xl p-0 overflow-hidden bg-zinc-900 mt-0 top-[3vh] translate-y-0 border-0">
+        <DialogTitle className="sr-only">
+          {movie.title}
+        </DialogTitle>
         <DialogDescription className="sr-only">
           Movie details for {movie.title}
         </DialogDescription>
