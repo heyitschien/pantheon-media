@@ -1,7 +1,7 @@
 import { Navbar } from "@/components/navbar";
 import { Hero } from "@/components/hero";
-import { MovieRow } from "@/components/movie-row";
-import { TRENDING_MOVIES } from "@/data/movies";
+import { FeaturedProjectsRow } from "@/components/featured-projects-row";
+import { FEATURED_PROJECTS } from "@/data/featured-projects";
 
 const Index = () => {
   return (
@@ -12,7 +12,7 @@ const Index = () => {
           <Hero />
         </div>
         <div className="relative z-30 -mt-32">
-          <MovieRow title="Featured Projects" movies={TRENDING_MOVIES} />
+          <FeaturedProjectsRow title="Featured Projects" movies={FEATURED_PROJECTS} />
         </div>
       </div>
     </div>

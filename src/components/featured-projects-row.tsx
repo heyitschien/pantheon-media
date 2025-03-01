@@ -2,7 +2,7 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import { PantheonMediaContainer } from "./media/PantheonMediaContainer";
 import { useState, useRef } from "react";
 
-interface MovieRowProps {
+interface FeaturedProjectsRowProps {
   title: string;
   movies: Array<{
     mediaId: string;
@@ -17,7 +17,7 @@ interface MovieRowProps {
   }>;
 }
 
-export function MovieRow({ title, movies }: MovieRowProps) {
+export function FeaturedProjectsRow({ title, movies }: FeaturedProjectsRowProps) {
   const rowRef = useRef<HTMLDivElement>(null);
   const [showLeftArrow, setShowLeftArrow] = useState(false);
   const [showRightArrow, setShowRightArrow] = useState(true);
@@ -95,4 +95,4 @@ export function MovieRow({ title, movies }: MovieRowProps) {
       </div>
     </div>
   );
-}
+} 

@@ -412,16 +412,6 @@ export function MovieCard({
     setTimeout(() => setActiveButton(null), 1500);
   };
 
-  // Add a debug function to manually trigger the preview
-  const debugTriggerPreview = async (event: React.MouseEvent) => {
-    event.preventDefault();
-    event.stopPropagation();
-    
-    console.log('Debug: Manually triggering preview for:', title, 'with ID:', id);
-    setIsHovered(true);
-    await fetchPreviewVideo();
-  };
-
   return (
     <div
       className="group relative w-[300px] transition duration-200 hover:z-[100]"
@@ -456,16 +446,6 @@ export function MovieCard({
               </div>
             )}
           </div>
-          
-          {/* Debug Button - Only visible in development */}
-          {process.env.NODE_ENV === 'development' && (
-            <button
-              onClick={debugTriggerPreview}
-              className="absolute bottom-3 right-3 bg-red-500 text-white text-xs px-2 py-1 rounded opacity-50 hover:opacity-100"
-            >
-              Debug Preview
-            </button>
-          )}
         </div>
       </div>
 

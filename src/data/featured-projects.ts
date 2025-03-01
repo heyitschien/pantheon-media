@@ -1,5 +1,3 @@
-import { Movie } from '../types/movie';
-
 interface PantheonMedia {
   mediaId: string;
   title: string;
@@ -24,5 +22,8 @@ export const PANTHEON_HIGHLIGHTS: PantheonMedia = {
   genres: ["Regenerative", "Nature", "Sustainability", "Wellness", "Documentary"]
 };
 
-// Only keep the collection we're currently using in the UI
-export const TRENDING_MOVIES: PantheonMedia[] = [PANTHEON_HIGHLIGHTS];
+// Featured projects collection
+export const FEATURED_PROJECTS: PantheonMedia[] = [PANTHEON_HIGHLIGHTS];
+
+// Export for backward compatibility during transition
+export const TRENDING_MOVIES = FEATURED_PROJECTS; 
