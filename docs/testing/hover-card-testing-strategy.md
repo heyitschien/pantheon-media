@@ -302,4 +302,227 @@ const verifyCleanup = (element: HTMLElement) => {
 2. Add integration tests
 3. Create performance test suite
 4. Set up continuous testing
-5. Monitor and adjust based on results 
+5. Monitor and adjust based on results
+
+## Visual Acceptance Criteria
+
+### Preview Modal Layout
+```
+┌────────────────────────────┐
+│                            │
+│      Video Preview         │
+│                            │
+│                            │
+├────────────────────────────┤
+│ 2024 • 23m • PG-13         │
+├────────────────────────────┤
+│ [Regenerative] [Nature]    │
+│ [Sustainability] [Wellness]│
+│ [Documentary]              │
+└────────────────────────────┘
+```
+
+### Required Visual Elements
+1. **Video Preview Area**
+   - Dimensions: 360px width
+   - Aspect ratio: 16:9
+   - Background: Black with 90% opacity
+   - Blur effect on background
+
+2. **Metadata Bar**
+   - Year (2024)
+   - Duration (23m)
+   - Rating badge (PG-13)
+   - Separator dots between items
+   - Semi-transparent background
+
+3. **Genre Tags**
+   - Pill-shaped containers
+   - Dark background (zinc-800/70)
+   - White text with 90% opacity
+   - Flexible wrapping
+   - Consistent spacing
+
+### Visual States
+
+1. **Default Card State**
+```typescript
+describe('PantheonCard Default State', () => {
+  it('should display correct thumbnail image', () => {
+    // Test image loading and dimensions
+  });
+
+  it('should show Pantheon badge when isPantheonOriginal is true', () => {
+    // Test badge visibility and styling
+  });
+});
+```
+
+2. **Hover Transition**
+```typescript
+describe('Preview Hover Transition', () => {
+  it('should scale smoothly on hover', () => {
+    // Test transform scale animation
+  });
+
+  it('should maintain position relative to original card', () => {
+    // Test positioning: -32px top, -30px left
+  });
+
+  it('should have correct z-index layering', () => {
+    // Test z-index: 100
+  });
+});
+```
+
+3. **Video States**
+```typescript
+describe('Video Preview States', () => {
+  it('should show loading state while video initializes', () => {
+    // Test loading spinner
+  });
+
+  it('should transition smoothly from thumbnail to video', () => {
+    // Test opacity transition
+    // Test video playback start
+  });
+
+  it('should handle video load errors gracefully', () => {
+    // Test error state display
+  });
+});
+```
+
+### Interaction Tests
+
+1. **Mouse Interactions**
+```typescript
+describe('Mouse Interaction Behavior', () => {
+  it('should trigger preview on mouseEnter', () => {
+    // Test hover activation
+  });
+
+  it('should close preview on mouseLeave', () => {
+    // Test hover deactivation
+  });
+
+  it('should handle rapid hover/unhover events', () => {
+    // Test hover spam protection
+  });
+});
+```
+
+2. **Video Playback**
+```typescript
+describe('Video Playback Behavior', () => {
+  it('should start playing automatically when visible', () => {
+    // Test autoplay
+  });
+
+  it('should be muted by default', () => {
+    // Test muted state
+  });
+
+  it('should cleanup video resources on close', () => {
+    // Test resource cleanup
+  });
+});
+```
+
+### Performance Metrics
+
+1. **Timing Requirements**
+```typescript
+describe('Performance Requirements', () => {
+  it('should initialize preview within 300ms', async () => {
+    // Test initialization time
+  });
+
+  it('should complete hover animation within 200ms', () => {
+    // Test animation duration
+  });
+
+  it('should start video playback within 500ms of hover', () => {
+    // Test video start timing
+  });
+});
+```
+
+2. **Resource Management**
+```typescript
+describe('Resource Management', () => {
+  it('should properly destroy HLS instance on unmount', () => {
+    // Test HLS cleanup
+  });
+
+  it('should release video resources when hidden', () => {
+    // Test video element cleanup
+  });
+
+  it('should handle multiple preview instances efficiently', () => {
+    // Test memory usage with multiple cards
+  });
+});
+```
+
+### Accessibility Tests
+
+```typescript
+describe('Accessibility Requirements', () => {
+  it('should maintain readable text contrast ratios', () => {
+    // Test text contrast
+  });
+
+  it('should provide appropriate ARIA labels', () => {
+    // Test aria-labels
+  });
+
+  it('should handle keyboard navigation', () => {
+    // Test keyboard interactions
+  });
+});
+```
+
+## Implementation Checklist
+
+### Visual Implementation
+- [x] Video preview container
+- [x] Metadata bar layout
+- [x] Genre tags styling
+- [x] Hover transitions
+- [ ] Loading states
+- [ ] Error states
+
+### Functional Implementation
+- [x] Video initialization
+- [x] Hover state management
+- [x] Resource cleanup
+- [ ] Error handling
+- [ ] Performance optimization
+
+### Testing Implementation
+- [ ] Unit tests
+- [ ] Integration tests
+- [ ] Visual regression tests
+- [ ] Performance tests
+- [ ] Accessibility tests
+
+## Success Metrics
+
+### Performance
+- Video preview loads within 300ms
+- Hover transition completes in 200ms
+- Memory usage < 100MB per preview
+- 60fps animation performance
+
+### Quality
+- No visual glitches during transitions
+- Correct aspect ratio maintained
+- Consistent typography and spacing
+- Proper error state handling
+
+### Accessibility
+- WCAG 2.1 AA compliant
+- Keyboard navigable
+- Screen reader friendly
+- Proper focus management 

@@ -118,6 +118,10 @@ export function PantheonPreview({
 
   return (
     <div
+      data-testid="preview-container"
+      role="dialog"
+      aria-label={`Preview: ${title}`}
+      tabIndex={0}
       className={cn(
         "absolute top-0 left-0 w-[360px] -translate-y-[32px] -translate-x-[30px] transition-all duration-300",
         "opacity-0 invisible scale-95 group-hover:opacity-100 group-hover:visible group-hover:scale-100",
@@ -136,6 +140,7 @@ export function PantheonPreview({
                 "w-full h-full object-cover transition-opacity duration-500 brightness-110",
                 showVideo ? "opacity-0" : "opacity-100"
               )}
+              data-testid="preview-poster"
             />
             <div className="absolute inset-0">
               <video
@@ -148,27 +153,35 @@ export function PantheonPreview({
                 playsInline
                 preload="metadata"
                 poster={previewVideo?.posterUrl}
+                data-testid="preview-video"
               />
             </div>
           </div>
 
           {/* Loading State */}
           {isLoading && (
-            <div className="absolute inset-0 flex items-center justify-center bg-black/50">
+            <div 
+              className="absolute inset-0 flex items-center justify-center bg-black/50"
+              data-testid="loading-indicator"
+              role="progressbar"
+            >
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white"></div>
             </div>
           )}
 
           {/* Error State */}
           {error && (
-            <div className="absolute inset-0 flex items-center justify-center bg-black/50">
+            <div 
+              className="absolute inset-0 flex items-center justify-center bg-black/50"
+              data-testid="error-message"
+            >
               <p className="text-white text-sm">{error}</p>
             </div>
           )}
         </div>
 
         {/* Info Section */}
-        <div className="p-4">
+        <div className="p-4" data-testid="preview-info">
           <div className="flex items-center gap-1 text-[15px]">
             <span className="text-white/80">{year}</span>
             <span className="text-white/80 mx-1.5">•</span>
@@ -179,11 +192,12 @@ export function PantheonPreview({
             </span>
           </div>
           {/* Genre Tags */}
-          <div className="flex flex-wrap gap-2 mt-3">
+          <div className="flex flex-wrap gap-2 mt-3" data-testid="genre-tags">
             {genres.map((genre) => (
               <span
                 key={genre}
                 className="text-xs text-white/90 px-2 py-1 bg-zinc-800/70 rounded"
+                data-testid={`genre-tag-${genre.toLowerCase()}`}
               >
                 {genre}
               </span>

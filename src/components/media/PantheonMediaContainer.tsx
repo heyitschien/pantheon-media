@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { PantheonCard } from "./PantheonCard";
 import { PantheonPreview } from "./PantheonPreview";
+import { cn } from "../../lib/utils";
 
 interface PantheonMediaContainerProps {
   media: {
@@ -28,7 +29,14 @@ export function PantheonMediaContainer({ media }: PantheonMediaContainerProps) {
   };
 
   return (
-    <div className="group relative w-[300px] transition duration-200 hover:z-[100]">
+    <div 
+      className={cn(
+        "group relative w-[300px] transition duration-200",
+        isHovered ? "z-[100]" : ""
+      )}
+      data-testid="media-container"
+      data-hovered={isHovered}
+    >
       <PantheonCard
         mediaId={media.mediaId}
         title={media.title}
