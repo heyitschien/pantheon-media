@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { getPreviewVideo } from "@/services/bunny-stream";
-import { Play, Eye, Heart, Info } from "lucide-react";
+import { Play, Eye, Heart, Info, ChevronDown } from "lucide-react";
 import { PlayButton, MovieControlButton, InfoButton } from "../ui/movie-controls";
 import Hls from 'hls.js';
 
@@ -15,6 +15,7 @@ interface PantheonPreviewProps {
   genres?: string[];
   isVisible: boolean;
   onClose: () => void;
+  coverImage: string;
 }
 
 export function PantheonPreview({
@@ -27,6 +28,7 @@ export function PantheonPreview({
   genres = [],
   isVisible,
   onClose,
+  coverImage,
 }: PantheonPreviewProps) {
   const [previewVideo, setPreviewVideo] = useState<{ videoUrl: string; posterUrl: string } | null>(null);
   const [showVideo, setShowVideo] = useState(false);
@@ -119,6 +121,7 @@ export function PantheonPreview({
   return (
     <div
       data-testid="preview-container"
+      data-media-id={mediaId}
       role="dialog"
       aria-label={`Preview: ${title}`}
       tabIndex={0}
@@ -135,7 +138,7 @@ export function PantheonPreview({
           <div className="relative w-full h-[216px]">
             <img
               alt={`${title} preview`}
-              src={previewVideo?.posterUrl}
+              src={coverImage}
               className={cn(
                 "w-full h-full object-cover transition-opacity duration-500 brightness-110",
                 showVideo ? "opacity-0" : "opacity-100"
@@ -152,7 +155,7 @@ export function PantheonPreview({
                 muted
                 playsInline
                 preload="metadata"
-                poster={previewVideo?.posterUrl}
+                poster={coverImage}
                 data-testid="preview-video"
               />
             </div>
@@ -182,6 +185,26 @@ export function PantheonPreview({
 
         {/* Info Section */}
         <div className="p-4" data-testid="preview-info">
+          {/* Control Buttons Section - Moved here */}
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <button
+                className="flex items-center justify-center w-11 h-11 rounded-full bg-white hover:bg-white/90 transition-colors"
+                aria-label="Play"
+                data-testid="play-button"
+              >
+                <Play className="w-6 h-6 text-black" />
+              </button>
+            </div>
+            <button
+              className="flex items-center justify-center w-11 h-11 rounded-full bg-zinc-800/80 hover:bg-zinc-800 border border-white/20 transition-colors"
+              aria-label="More Info"
+              data-testid="more-info-button"
+            >
+              <ChevronDown className="w-6 h-6 text-white" />
+            </button>
+          </div>
+
           <div className="flex items-center gap-1 text-[15px]">
             <span className="text-white/80">{year}</span>
             <span className="text-white/80 mx-1.5">•</span>

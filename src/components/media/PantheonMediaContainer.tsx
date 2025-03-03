@@ -54,6 +54,7 @@ export function PantheonMediaContainer({ media }: PantheonMediaContainerProps) {
         genres={media.genres}
         isVisible={isHovered}
         onClose={handleClose}
+        coverImage={media.coverImage}
       />
     </div>
   );

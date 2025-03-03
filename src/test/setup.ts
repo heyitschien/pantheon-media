@@ -47,6 +47,9 @@ Object.defineProperty(window, 'matchMedia', {
 
 // Mock HTMLMediaElement methods
 window.HTMLMediaElement.prototype.load = vi.fn();
-window.HTMLMediaElement.prototype.play = vi.fn();
+Object.defineProperty(window.HTMLMediaElement.prototype, 'play', {
+  configurable: true,
+  value: vi.fn().mockResolvedValue(undefined)
+});
 window.HTMLMediaElement.prototype.pause = vi.fn();
 window.HTMLMediaElement.prototype.addTextTrack = vi.fn(); 
