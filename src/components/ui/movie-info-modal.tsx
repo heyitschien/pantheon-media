@@ -53,72 +53,158 @@ export function MovieInfoModal({ isOpen, onClose, movie }: MovieInfoModalProps) 
   const { toast } = useToast();
   const [activeButton, setActiveButton] = useState<string | null>(null);
   const hlsRef = useRef<Hls | null>(null);
+  const lastMovieTitleRef = useRef<string>(movie.title);
+  const hasInitializedRef = useRef<boolean>(false);
+  const [imageError, setImageError] = useState(false);
+
+  // Check if image path is valid (has extension)
+  const isValidImagePath = (path: string) => {
+    // Check if path is a URL or a valid local path with extension
+    return path && (
+      path.startsWith('http') || 
+      path.match(/\.(jpeg|jpg|gif|png|webp)$/) ||
+      path.startsWith('/') // Local path starting with /
+    );
+  };
+  
+  // Get a valid image URL or fallback
+  const getValidImageUrl = useCallback((imagePath: string) => {
+    if (isValidImagePath(imagePath)) {
+      return imagePath;
+    }
+    // Fallback to a default image
+    console.warn('Invalid image path:', imagePath);
+    return '/first-movie-card.png'; // Default fallback image
+  }, []);
 
   // Initialize HLS
   const initHls = useCallback((videoElement: HTMLVideoElement, src: string) => {
-    if (Hls.isSupported()) {
-      if (hlsRef.current) {
-        hlsRef.current.destroy();
-      }
-
-      const hls = new Hls({
-        enableWorker: true,
-        lowLatencyMode: true,
-      });
-
-      hls.attachMedia(videoElement);
-      hls.on(Hls.Events.MEDIA_ATTACHED, () => {
-        hls.loadSource(src);
-      });
-
-      hls.on(Hls.Events.ERROR, (event, data) => {
-        if (data.fatal) {
-          console.error('HLS error:', data);
-          setError('Failed to play video');
-          setShowVideo(false);
+    if (!videoElement || !src) return;
+    
+    console.log('Initializing HLS for modal preview:', src);
+    
+    try {
+      if (Hls.isSupported()) {
+        // Clean up existing HLS instance if any
+        if (hlsRef.current) {
+          hlsRef.current.destroy();
+          hlsRef.current = null;
         }
-      });
-
-      hlsRef.current = hls;
-    } else if (videoElement.canPlayType('application/vnd.apple.mpegurl')) {
-      // For Safari
-      videoElement.src = src;
+  
+        const hls = new Hls({
+          enableWorker: true,
+          lowLatencyMode: true,
+          // Add debug mode to help troubleshoot
+          debug: true,
+          // Add more aggressive settings for better recovery
+          fragLoadingMaxRetry: 5,
+          manifestLoadingMaxRetry: 5,
+          levelLoadingMaxRetry: 5
+        });
+  
+        hls.attachMedia(videoElement);
+        
+        hls.on(Hls.Events.MEDIA_ATTACHED, () => {
+          console.log('HLS media attached, loading source:', src);
+          hls.loadSource(src);
+        });
+  
+        hls.on(Hls.Events.MANIFEST_PARSED, () => {
+          console.log('HLS manifest parsed, starting playback');
+          videoElement.play()
+            .then(() => {
+              console.log('Video playback started successfully');
+              setShowVideo(true);
+              setIsLoading(false);
+            })
+            .catch(err => {
+              console.error('Error starting playback:', err);
+              // Try muted playback as fallback (for autoplay policies)
+              videoElement.muted = true;
+              setIsMuted(true);
+              videoElement.play()
+                .then(() => {
+                  console.log('Muted playback started successfully');
+                  setShowVideo(true);
+                  setIsLoading(false);
+                })
+                .catch(innerErr => {
+                  console.error('Even muted playback failed:', innerErr);
+                  setError('Failed to play video. Please try the play button.');
+                  setIsLoading(false);
+                });
+            });
+        });
+  
+        hls.on(Hls.Events.ERROR, (event, data) => {
+          console.error('HLS error event:', event);
+          console.error('HLS error data:', data);
+          
+          if (data.fatal) {
+            console.error('Fatal HLS error:', data.type, data.details);
+            setError(`Video playback error: ${data.details}`);
+            setShowVideo(false);
+            setIsLoading(false);
+            
+            // Try to recover on media and network errors
+            if (data.type === Hls.ErrorTypes.NETWORK_ERROR || 
+                data.type === Hls.ErrorTypes.MEDIA_ERROR) {
+              hls.recoverMediaError();
+            }
+          }
+        });
+  
+        hlsRef.current = hls;
+      } else if (videoElement.canPlayType('application/vnd.apple.mpegurl')) {
+        // For Safari which has native HLS support
+        console.log('Using native HLS support for Safari');
+        videoElement.src = src;
+        videoElement.addEventListener('loadedmetadata', () => {
+          videoElement.play()
+            .then(() => {
+              setShowVideo(true);
+              setIsLoading(false);
+            })
+            .catch(err => {
+              console.error('Error playing video in Safari:', err);
+              setError('Failed to play video');
+              setIsLoading(false);
+            });
+        });
+      } else {
+        console.error('HLS is not supported in this browser and no native support');
+        setError('Your browser does not support HLS video playback');
+        setIsLoading(false);
+      }
+    } catch (error) {
+      console.error('Error in initHls:', error);
+      setError('Failed to initialize video player');
+      setIsLoading(false);
     }
   }, []);
 
   // Enhanced fetch preview video function
   const fetchPreviewVideo = useCallback(async () => {
-    if (previewVideo && videoRef.current) {
-      videoRef.current.currentTime = 0;
-      videoRef.current.muted = isMuted;
-      if (Hls.isSupported()) {
-        if (hlsRef.current) {
-          hlsRef.current.loadSource(previewVideo.videoUrl);
-        } else {
-          initHls(videoRef.current, previewVideo.videoUrl);
-        }
-      }
-      videoRef.current.play().catch(console.error);
-      setShowVideo(true);
-      return;
-    }
-
+    console.log('Fetching preview video for:', movie.title);
     setIsLoading(true);
     setError(null);
+    setShowVideo(false);
 
     try {
-      const video = await getPreviewVideo(movie.title);
+      // Always fetch a fresh video URL to avoid stale cache issues
+      const video = await getPreviewVideo(movie.title, { forceRefresh: true });
+      console.log('Received preview video:', video);
+      
+      if (!video?.videoUrl) {
+        throw new Error('Invalid video data received');
+      }
+      
       setPreviewVideo(video);
       setRetryCount(0);
       
       if (videoRef.current) {
         videoRef.current.muted = isMuted;
         initHls(videoRef.current, video.videoUrl);
-        const playPromise = videoRef.current.play();
-        if (playPromise !== undefined) {
-          await playPromise;
-          setShowVideo(true);
-        }
       }
     } catch (err) {
       console.error('Failed to load preview:', err);
@@ -129,36 +215,75 @@ export function MovieInfoModal({ isOpen, onClose, movie }: MovieInfoModalProps) 
         setError('Unable to load preview. Please try again later.');
       }
     } finally {
-      setIsLoading(false);
+      if (!videoRef.current) {
+        setIsLoading(false);
+      }
     }
-  }, [movie.title, previewVideo, retryCount, isMuted, initHls]);
+  }, [movie.title, retryCount, isMuted, initHls]);
+
+  // Check if movie title changed
+  useEffect(() => {
+    if (lastMovieTitleRef.current !== movie.title) {
+      console.log('Movie title changed, resetting preview state');
+      lastMovieTitleRef.current = movie.title;
+      setPreviewVideo(null);
+      setShowVideo(false);
+      setError(null);
+      hasInitializedRef.current = false;
+    }
+  }, [movie.title]);
 
   // Enhanced modal open/close effect
   useEffect(() => {
     let timeout: NodeJS.Timeout;
     
     if (isOpen) {
-      timeout = setTimeout(fetchPreviewVideo, 500);
-    } else {
+      console.log('Modal opened, initializing preview');
+      // Reset state when modal opens to ensure fresh initialization
       setShowVideo(false);
       setError(null);
+      
+      // Force a new fetch every time the modal opens
+      // This is the key fix - we're not relying on cached data anymore
       setPreviewVideo(null);
+      hasInitializedRef.current = false;
+      
+      // Delay fetch slightly to ensure DOM is ready
+      timeout = setTimeout(fetchPreviewVideo, 300);
+    } else {
+      console.log('Modal closed, cleaning up video');
+      // When modal closes, clean up completely
+      setShowVideo(false);
+      
       if (videoRef.current) {
         videoRef.current.pause();
+        videoRef.current.removeAttribute('src');
+        videoRef.current.load();
       }
+      
+      // Properly destroy HLS instance
       if (hlsRef.current) {
+        hlsRef.current.stopLoad();
         hlsRef.current.destroy();
+        hlsRef.current = null;
       }
-      setIsMuted(true);
     }
 
     return () => {
       clearTimeout(timeout);
+    };
+  }, [isOpen, fetchPreviewVideo, initHls]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      console.log('Modal component unmounting, cleaning up HLS');
       if (hlsRef.current) {
         hlsRef.current.destroy();
+        hlsRef.current = null;
       }
     };
-  }, [isOpen, fetchPreviewVideo]);
+  }, []);
 
   // Video element event handlers
   const handleVideoLoaded = useCallback(() => {
@@ -167,7 +292,9 @@ export function MovieInfoModal({ isOpen, onClose, movie }: MovieInfoModalProps) 
     }
   }, [isMuted]);
 
-  const handleVideoError = useCallback(() => {
+  const handleVideoError = useCallback((e: React.SyntheticEvent<HTMLVideoElement, Event>) => {
+    const videoElement = e.currentTarget;
+    console.error('Video error:', videoElement.error);
     setError('Failed to play video');
     setShowVideo(false);
   }, []);
@@ -186,16 +313,33 @@ export function MovieInfoModal({ isOpen, onClose, movie }: MovieInfoModalProps) 
 
   const handlePlay = async () => {
     try {
+      // Use existing preview video if available
+      if (previewVideo) {
+        playMovie({
+          videoUrl: previewVideo.videoUrl,
+          posterUrl: previewVideo.posterUrl || movie.image,
+          title: movie.title
+        });
+        onClose();
+        return;
+      }
+      
+      // Otherwise fetch new video
       const video = await getPreviewVideo(movie.title);
       
       playMovie({
         videoUrl: video.videoUrl,
-        posterUrl: video.posterUrl,
+        posterUrl: video.posterUrl || movie.image,
         title: movie.title
       });
       onClose();
     } catch (error) {
       console.error('Failed to play video:', error);
+      toast({
+        title: "Error",
+        description: "Failed to play video. Please try again.",
+        variant: "destructive"
+      });
     }
   };
 
@@ -236,44 +380,50 @@ export function MovieInfoModal({ isOpen, onClose, movie }: MovieInfoModalProps) 
           <div className="relative w-full aspect-[16/9]">
             {/* Static Image */}
             <img
-              src={movie.image}
+              src={getValidImageUrl(movie.image)}
               alt={`${movie.title} backdrop`}
               className={cn(
                 "w-full h-full object-cover transition-opacity duration-700",
-                showVideo ? "opacity-0" : "opacity-100"
+                showVideo ? "opacity-0" : "opacity-100",
+                imageError ? "opacity-50" : ""
               )}
+              onError={(e) => {
+                console.error('Image failed to load:', movie.image);
+                setImageError(true);
+                // Set fallback image
+                e.currentTarget.src = '/first-movie-card.png';
+              }}
             />
 
             {/* Video Preview */}
-            {previewVideo && (
-              <div className="absolute inset-0">
-                <video
-                  ref={videoRef}
-                  src={previewVideo.videoUrl}
-                  poster={previewVideo.posterUrl}
-                  className={cn(
-                    "w-full h-full object-cover",
-                    "transition-opacity duration-1000",
-                    showVideo ? "opacity-100" : "opacity-0"
-                  )}
-                  muted
-                  loop
-                  playsInline
-                  preload="auto"
-                />
-
-                {/* Volume Control */}
-                {showVideo && !error && (
-                  <VolumeButton
-                    onClick={handleVolumeToggle}
-                    isMuted={isMuted}
-                    showFeedback={true}
-                  />
+            <div className="absolute inset-0">
+              <video
+                ref={videoRef}
+                className={cn(
+                  "w-full h-full object-cover",
+                  "transition-opacity duration-1000",
+                  showVideo ? "opacity-100" : "opacity-0"
                 )}
-              </div>
-            )}
+                muted
+                loop
+                playsInline
+                preload="auto"
+                poster={movie.image}
+                onLoadedData={handleVideoLoaded}
+                onError={handleVideoError}
+              />
 
-            {/* Loading and Error States remain the same */}
+              {/* Volume Control */}
+              {showVideo && !error && (
+                <VolumeButton
+                  onClick={handleVolumeToggle}
+                  isMuted={isMuted}
+                  showFeedback={true}
+                />
+              )}
+            </div>
+
+            {/* Loading State */}
             {isLoading && (
               <div className="absolute inset-0 flex flex-col items-center justify-center bg-zinc-900/80 backdrop-blur-sm">
                 <div className="w-8 h-8 border-3 border-white border-t-transparent rounded-full animate-spin mb-2" />
@@ -283,6 +433,7 @@ export function MovieInfoModal({ isOpen, onClose, movie }: MovieInfoModalProps) 
               </div>
             )}
 
+            {/* Error State */}
             {error && !isLoading && (
               <div className="absolute inset-0 flex flex-col items-center justify-center bg-zinc-900/80 backdrop-blur-sm">
                 <p className="text-white text-sm font-medium text-center px-4 mb-2">{error}</p>

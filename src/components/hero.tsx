@@ -504,15 +504,12 @@ export function Hero() {
         onClose={() => setIsModalOpen(false)}
         movie={{
           title: PANTHEON_HIGHLIGHTS.title,
-          image: PANTHEON_HIGHLIGHTS.image,
+          image: PANTHEON_HIGHLIGHTS.coverImage || currentAsset.url,
           description: PANTHEON_HIGHLIGHTS.description,
           rating: PANTHEON_HIGHLIGHTS.rating,
           duration: PANTHEON_HIGHLIGHTS.duration,
           year: PANTHEON_HIGHLIGHTS.year,
-          genres: PANTHEON_HIGHLIGHTS.genres,
-          director: PANTHEON_HIGHLIGHTS.director,
-          cast: PANTHEON_HIGHLIGHTS.cast,
-          match: PANTHEON_HIGHLIGHTS.match
+          genres: PANTHEON_HIGHLIGHTS.genres
         }}
       />
     </>

@@ -97,7 +97,8 @@ export function PantheonPreview({
       setError(null);
       
       try {
-        const video = await getPreviewVideo(mediaId);
+        // Use forceRefresh to ensure we get fresh data
+        const video = await getPreviewVideo(mediaId, { forceRefresh: true });
         if (!video?.videoUrl) throw new Error('Invalid video data');
         
         setPreviewVideo(video);
@@ -126,8 +127,8 @@ export function PantheonPreview({
   const handlePlay = async () => {
     try {
       if (!previewVideo) {
-        // If preview video isn't loaded yet, fetch it
-        const video = await getPreviewVideo(mediaId);
+        // If preview video isn't loaded yet, fetch it with forceRefresh
+        const video = await getPreviewVideo(mediaId, { forceRefresh: true });
         if (!video?.videoUrl) throw new Error('Invalid video data');
         
         // Play the movie using the PlayerContext

@@ -25,6 +25,7 @@ interface GetPreviewVideoOptions {
   maxDuration?: number;
   minDuration?: number;
   orientation?: 'landscape' | 'portrait';
+  forceRefresh?: boolean;
 }
 
 // Simple in-memory cache
@@ -103,13 +104,13 @@ export async function getPreviewVideo(
   options: GetPreviewVideoOptions = {}
 ): Promise<{ videoUrl: string; posterUrl: string }> {
   try {
-    console.log('getPreviewVideo called with ID:', videoId);
+    console.log('getPreviewVideo called with ID:', videoId, 'options:', options);
     
-    // Check cache first
+    // Check cache first (unless forceRefresh is true)
     const cacheKey = videoId;
     const cached = cache.get(cacheKey);
 
-    if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
+    if (!options.forceRefresh && cached && Date.now() - cached.timestamp < CACHE_DURATION) {
       console.log('Using cached preview for video:', videoId);
       return {
         videoUrl: cached.videoUrl,
@@ -117,7 +118,7 @@ export async function getPreviewVideo(
       };
     }
 
-    // Try to get video details from API
+    // If forceRefresh is true or cache is stale, fetch fresh data
     console.log('Fetching video details from Bunny.net API for ID:', videoId);
     const response = await fetch(`${BUNNY_CONFIG.apiBaseUrl}/${BUNNY_CONFIG.libraryId}/videos/${videoId}`, {
       headers: {
