@@ -1,40 +1,37 @@
 # Work Log - Pantheon Media Project
 
-## Date: March 15, 2024
+## Date: March 15, 2025
 
 ### Project Overview
-Working on connecting the movie information buttons and video player functionality in the Pantheon Media streaming platform to ensure a seamless user experience.
+Working on connecting the movie information buttons and video player functionality in the Pantheon Media streaming platform, and fixing critical issues with video preview playback.
 
 ### Current Branch
-`feature/connect-movie-info-buttons`
+`feature/connect-movie-info-buttons` → Merged to `main`
 
 ### Current State Assessment
 
 1. **Hover Preview Module**:
    - The small preview that appears when hovering over a movie card
    - Contains a play button and an "arrow down" button (ChevronDown)
-   - Currently, the arrow down button doesn't have functionality connected
-   - The play button in this module is not connected to the PlayerContext
+   - Connected the arrow down button to open the MovieInfoModal
+   - Connected the play button to the PlayerContext
 
 2. **Large Information Modal**:
-   - Currently summoned when clicking the "i More info" button in the hero section
+   - Summoned when clicking the "i More info" button in the hero section or the arrow down button in hover previews
    - Displays comprehensive information about the selected movie
-   - Not connected to the hover preview module's arrow down button
+   - Fixed critical issue with video previews not working after first use
 
 3. **Video Player**:
    - "Watch Our Work" button launches the player
-   - Player currently shows a black screen instead of loading the feature video
-   - The issue may be related to how the video URL is passed to the player
-   - The MoviePlayer component expects an HLS stream URL (m3u8)
-   - Bunny.net integration is set up with fallback mechanisms
+   - Fixed black screen issue by ensuring proper HLS initialization
+   - Improved video loading and playback reliability
 
 ### Technical Details
 
 1. **Video Loading Process**:
    - Videos are fetched using the `getPreviewVideo` function in `bunny-stream.ts`
-   - The function attempts to fetch from Bunny.net API first
-   - Falls back to static assets if API fails
-   - The main video asset ID is `13904fa8-dda5-4e9e-88c4-0d57fa9af6c4`
+   - Added `forceRefresh` option to bypass cache when needed
+   - Improved cache handling logic to be more reliable
 
 2. **Player Context**:
    - The `PlayerContext` manages video playback state
@@ -42,60 +39,105 @@ Working on connecting the movie information buttons and video player functionali
    - It stores this data in sessionStorage and navigates to the player page
 
 3. **Movie Player**:
-   - The `MoviePlayer` component directly uses the `src` prop for the video element
-   - It logs errors when video loading fails
-   - The player may not be properly handling HLS streams
+   - Enhanced HLS initialization with better error recovery settings
+   - Added debug mode to HLS for better troubleshooting
+   - Implemented proper cleanup when components unmount
 
-### Today's Tasks
+### Today's Completed Tasks
 
-1. **Connect the Arrow Down Button in Hover Preview**:
-   - Add an `onMoreInfo` callback prop to the PantheonPreview component
-   - Connect the arrow down button click to call this callback
-   - Update the PantheonMediaContainer to handle this callback and open the MovieInfoModal
-   - Pass the movie data to the MovieInfoModal
+#### 1. Connected the Arrow Down Button in Hover Preview
+- [x] Added an `onMoreInfo` callback prop to the PantheonPreview component
+- [x] Connected the arrow down button click to call this callback
+- [x] Updated the PantheonMediaContainer to handle this callback and open the MovieInfoModal
+- [x] Passed the movie data to the MovieInfoModal
 
-2. **Fix Video Player Loading**:
-   - Debug why the player shows a black screen
-   - Check if the correct video URL format is being passed (HLS m3u8)
-   - Ensure the Bunny.net integration is working correctly
-   - Add proper HLS initialization in the MoviePlayer component if needed
-   - Connect all play buttons to use the same reliable method for launching videos
+#### 2. Fixed Video Player Loading
+- [x] Debugged and fixed the black screen issue
+- [x] Ensured the correct video URL format is being passed (HLS m3u8)
+- [x] Verified the Bunny.net integration is working correctly
+- [x] Added proper HLS initialization in the MoviePlayer component
+- [x] Connected all play buttons to use the same reliable method for launching videos
 
-3. **Testing**:
-   - Test all connections to ensure they work as expected
-   - Verify that the correct video is loaded in the player
-   - Check browser console for any errors related to video loading
+#### 3. Fixed Video Preview Caching Issue
+- [x] Added `forceRefresh` option to bypass cache when needed
+- [x] Implemented complete state reset when modal opens
+- [x] Added proper cleanup when modal/preview closes
+- [x] Enhanced HLS initialization with better error recovery settings
+- [x] Added `removeAttribute('src')` and `load()` calls to fully reset video elements
+- [x] Forced fresh data retrieval on each modal open
 
-### Files to Modify
+### Technical Implementation Details
 
-1. `src/components/media/PantheonPreview.tsx` - Add functionality to the arrow down button
-2. `src/components/media/PantheonMediaContainer.tsx` - Handle the more info callback
-3. `src/components/player/MoviePlayer.tsx` - Add proper HLS initialization if needed
-4. `src/contexts/PlayerContext.tsx` - Ensure correct video data is passed
+#### 1. Enhanced HLS Configuration
+```typescript
+const hls = new Hls({
+  enableWorker: true,
+  lowLatencyMode: true,
+  debug: true,
+  fragLoadingMaxRetry: 5,
+  manifestLoadingMaxRetry: 5,
+  levelLoadingMaxRetry: 5
+});
+```
 
-### Implementation Strategy
+#### 2. Complete Cleanup Process
+```typescript
+// When modal closes
+if (videoRef.current) {
+  videoRef.current.pause();
+  videoRef.current.removeAttribute('src');
+  videoRef.current.load();
+}
 
-1. **For the Arrow Down Button**:
-   - Modify the PantheonPreview component to handle clicks on the arrow down button
-   - Create a connection between the hover preview and the information modal
-   - Ensure the modal receives the correct movie data
+if (hlsRef.current) {
+  hlsRef.current.stopLoad();
+  hlsRef.current.destroy();
+  hlsRef.current = null;
+}
+```
 
-2. **For the Video Player**:
-   - Check if the MoviePlayer component is properly initializing HLS for m3u8 streams
-   - Add HLS initialization similar to what's in the PantheonPreview component
-   - Ensure all play buttons pass the correct video URL format
-   - Add better error handling and logging
+#### 3. Cache Bypass Mechanism
+```typescript
+// In bunny-stream.ts
+interface GetPreviewVideoOptions {
+  // ...existing options
+  forceRefresh?: boolean;
+}
 
-### Expected Outcome
-By the end of today, users should be able to:
-1. Click the arrow down button on the hover preview to see the detailed information modal
-2. Click any play button to launch the video player with the correct video playing (not a black screen)
-3. Have a seamless experience navigating between these components
+// Check cache only if forceRefresh is false
+if (!options.forceRefresh && cached && Date.now() - cached.timestamp < CACHE_DURATION) {
+  // Use cached data
+}
+```
 
-This implementation will complete the core user journey for video discovery and playback in the Pantheon Media platform.
+### Files Modified
+1. `src/components/media/PantheonPreview.tsx`
+2. `src/components/media/PantheonMediaContainer.tsx`
+3. `src/components/player/MoviePlayer.tsx`
+4. `src/components/ui/movie-info-modal.tsx`
+5. `src/services/bunny-stream.ts`
+6. `src/components/hero.tsx`
 
-### Notes
-- The hero section's "i More info" button already works correctly - use this as a reference
-- The video player infrastructure is in place but needs debugging to ensure proper content loading
-- Focus on creating a consistent experience across all entry points to the video player
-- The main issue with the black screen is likely related to HLS initialization in the MoviePlayer component 
+### Testing
+- [x] Verified that all connections work as expected
+- [x] Confirmed that the correct video is loaded in the player
+- [x] Verified that video previews work consistently on repeated modal openings
+- [x] Confirmed that the modal can be opened and closed multiple times without issues
+- [x] Tested that video playback starts correctly each time
+- [x] Checked that there are no memory leaks or resource buildup
+
+### Lessons Learned
+1. HLS instances need to be properly destroyed and recreated between video initializations
+2. Video elements need complete cleanup including removing the source attribute
+3. Forcing fresh data retrieval can be more reliable than relying on cached data for media elements
+4. Adding debug mode to HLS is valuable for troubleshooting playback issues
+
+### Next Steps
+- Monitor for any remaining issues with video playback
+- Consider implementing similar fixes in other components that use HLS
+- Add more comprehensive error recovery for network issues
+
+### References
+- [HLS.js Documentation](https://github.com/video-dev/hls.js/blob/master/docs/API.md)
+- [MDN Video Element](https://developer.mozilla.org/en-US/docs/Web/HTML/Element/video)
+- Commit: `81cfc3f` - "Fix video preview caching issue in MovieInfoModal and PantheonPreview components" 
