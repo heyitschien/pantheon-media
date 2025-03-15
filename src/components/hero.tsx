@@ -298,6 +298,13 @@ export function Hero() {
   const handlePlayClick = async () => {
     try {
       const { videoUrl, posterUrl } = await getHeroVideo();
+      console.log('Playing hero video:', { videoUrl, posterUrl });
+      
+      // Ensure we're using the HLS stream URL
+      if (!videoUrl.includes('.m3u8')) {
+        console.warn('Video URL is not an HLS stream, this may cause playback issues');
+      }
+      
       playMovie({
         videoUrl,
         posterUrl,

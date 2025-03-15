@@ -2,6 +2,7 @@ import { useState } from "react";
 import { PantheonCard } from "./PantheonCard";
 import { PantheonPreview } from "./PantheonPreview";
 import { cn } from "../../lib/utils";
+import { MovieInfoModal } from "../ui/movie-info-modal";
 
 interface PantheonMediaContainerProps {
   media: {
@@ -19,6 +20,7 @@ interface PantheonMediaContainerProps {
 
 export function PantheonMediaContainer({ media }: PantheonMediaContainerProps) {
   const [isHovered, setIsHovered] = useState(false);
+  const [isModalOpen, setIsModalOpen] = useState(false);
 
   const handleHover = () => {
     setIsHovered(true);
@@ -26,6 +28,10 @@ export function PantheonMediaContainer({ media }: PantheonMediaContainerProps) {
 
   const handleClose = () => {
     setIsHovered(false);
+  };
+
+  const handleMoreInfo = () => {
+    setIsModalOpen(true);
   };
 
   return (
@@ -55,6 +61,22 @@ export function PantheonMediaContainer({ media }: PantheonMediaContainerProps) {
         isVisible={isHovered}
         onClose={handleClose}
         coverImage={media.coverImage}
+        onMoreInfo={handleMoreInfo}
+      />
+      
+      {/* Movie Info Modal */}
+      <MovieInfoModal
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        movie={{
+          title: media.title,
+          image: media.coverImage,
+          description: media.description,
+          rating: media.rating,
+          duration: media.duration,
+          year: media.year,
+          genres: media.genres
+        }}
       />
     </div>
   );

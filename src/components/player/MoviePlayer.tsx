@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useNavigate } from 'react-router-dom';
+import Hls from 'hls.js';
 
 interface MoviePlayerProps {
   src: string;
@@ -41,9 +42,89 @@ export function MoviePlayer({
   const playerRef = useRef<HTMLDivElement>(null);
   const controlsTimeoutRef = useRef<NodeJS.Timeout>();
   const retryTimeoutRef = useRef<NodeJS.Timeout>();
+  const hlsRef = useRef<Hls | null>(null);
 
   // Playback speed options
   const speedOptions = [0.5, 0.75, 1, 1.25, 1.5, 2];
+
+  // Initialize HLS
+  const initHls = useCallback((videoElement: HTMLVideoElement, src: string) => {
+    if (!videoElement || !src) return;
+    
+    try {
+      console.log('Initializing HLS with source:', src);
+      
+      // Clean up existing HLS instance if any
+      if (hlsRef.current) {
+        hlsRef.current.destroy();
+        hlsRef.current = null;
+      }
+      
+      if (Hls.isSupported()) {
+        const hls = new Hls({
+          enableWorker: true,
+          lowLatencyMode: true,
+          debug: true,
+        });
+        
+        hls.on(Hls.Events.ERROR, (event, data) => {
+          console.error('HLS error event:', event);
+          console.error('HLS error data:', data);
+          
+          if (data.fatal) {
+            console.error('Fatal HLS error:', data.type, data.details);
+            setError(`Video playback error: ${data.details}`);
+            setIsLoading(false);
+            
+            // Try to recover on media and network errors
+            if (data.type === Hls.ErrorTypes.NETWORK_ERROR || 
+                data.type === Hls.ErrorTypes.MEDIA_ERROR) {
+              hls.recoverMediaError();
+            }
+          }
+        });
+        
+        hls.on(Hls.Events.MANIFEST_PARSED, () => {
+          console.log('HLS manifest parsed successfully');
+          setIsLoading(false);
+          if (videoElement.paused && isPlaying) {
+            videoElement.play()
+              .then(() => {
+                console.log('Video playback started');
+              })
+              .catch(err => {
+                console.error('Error starting playback:', err);
+              });
+          }
+        });
+        
+        hls.attachMedia(videoElement);
+        hls.loadSource(src);
+        hlsRef.current = hls;
+        
+        console.log('HLS instance created and attached to video element');
+      } else if (videoElement.canPlayType('application/vnd.apple.mpegurl')) {
+        // For Safari which has native HLS support
+        console.log('Using native HLS support');
+        videoElement.src = src;
+        videoElement.addEventListener('loadedmetadata', () => {
+          setIsLoading(false);
+          if (isPlaying) {
+            videoElement.play()
+              .catch(err => console.error('Error playing video:', err));
+          }
+        });
+      } else {
+        console.error('HLS is not supported in this browser and no native support');
+        setError('Your browser does not support HLS video playback');
+        setIsLoading(false);
+      }
+    } catch (error) {
+      console.error('Error initializing HLS:', error);
+      setError('Failed to initialize video player');
+      setIsLoading(false);
+    }
+  }, [isPlaying]);
 
   // Handle keyboard shortcuts
   useEffect(() => {
@@ -88,6 +169,32 @@ export function MoviePlayer({
     return () => window.removeEventListener('keydown', handleKeyPress);
   }, [playbackSpeed, onClose]);
 
+  // Initialize video player with HLS
+  useEffect(() => {
+    if (!videoRef.current || !src) return;
+    
+    console.log('Setting up video with source:', src);
+    setIsLoading(true);
+    setError(null);
+    
+    // Check if the source is an HLS stream (m3u8)
+    if (src.includes('.m3u8')) {
+      console.log('Detected HLS stream, initializing HLS.js');
+      initHls(videoRef.current, src);
+    } else {
+      console.log('Not an HLS stream, using standard video element');
+      videoRef.current.src = src;
+    }
+    
+    return () => {
+      if (hlsRef.current) {
+        console.log('Destroying HLS instance on cleanup');
+        hlsRef.current.destroy();
+        hlsRef.current = null;
+      }
+    };
+  }, [src, initHls]);
+
   // Handle play/pause
   const togglePlay = useCallback(async () => {
     if (!videoRef.current) return;
@@ -101,20 +208,11 @@ export function MoviePlayer({
           await playPromise;
         }
       }
+      setIsPlaying(!isPlaying);
     } catch (error) {
-      console.error('Playback error:', error);
-      setError('Failed to play video. Please try again.');
-      
-      // Retry logic
-      if (retryCount < maxRetries) {
-        setRetryCount(prev => prev + 1);
-        retryTimeoutRef.current = setTimeout(() => {
-          setError(null);
-          togglePlay();
-        }, 1000);
-      }
+      console.error('Error toggling play state:', error);
     }
-  }, [isPlaying, retryCount, maxRetries]);
+  }, [isPlaying]);
 
   // Handle mute toggle
   const toggleMute = useCallback(() => {
@@ -319,7 +417,6 @@ export function MoviePlayer({
       {/* Video Element */}
       <video
         ref={videoRef}
-        src={src}
         poster={poster}
         className="w-full h-full object-cover"
         onClick={togglePlay}

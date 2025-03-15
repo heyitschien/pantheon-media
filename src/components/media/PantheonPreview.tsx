@@ -4,6 +4,7 @@ import { getPreviewVideo } from "@/services/bunny-stream";
 import { Play, Eye, Heart, Info, ChevronDown } from "lucide-react";
 import { PlayButton, MovieControlButton, InfoButton } from "../ui/movie-controls";
 import Hls from 'hls.js';
+import { usePlayer } from "@/contexts/PlayerContext";
 
 interface PantheonPreviewProps {
   mediaId: string;
@@ -16,6 +17,7 @@ interface PantheonPreviewProps {
   isVisible: boolean;
   onClose: () => void;
   coverImage: string;
+  onMoreInfo?: () => void;
 }
 
 export function PantheonPreview({
@@ -29,6 +31,7 @@ export function PantheonPreview({
   isVisible,
   onClose,
   coverImage,
+  onMoreInfo,
 }: PantheonPreviewProps) {
   const [previewVideo, setPreviewVideo] = useState<{ videoUrl: string; posterUrl: string } | null>(null);
   const [showVideo, setShowVideo] = useState(false);
@@ -36,6 +39,7 @@ export function PantheonPreview({
   const [error, setError] = useState<string | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const hlsRef = useRef<Hls | null>(null);
+  const { playMovie } = usePlayer();
 
   // Initialize HLS
   const initHls = async (videoElement: HTMLVideoElement, src: string) => {
@@ -118,6 +122,45 @@ export function PantheonPreview({
     };
   }, [isVisible, mediaId]);
 
+  // Handle play button click
+  const handlePlay = async () => {
+    try {
+      if (!previewVideo) {
+        // If preview video isn't loaded yet, fetch it
+        const video = await getPreviewVideo(mediaId);
+        if (!video?.videoUrl) throw new Error('Invalid video data');
+        
+        // Play the movie using the PlayerContext
+        playMovie({
+          videoUrl: video.videoUrl,
+          posterUrl: video.posterUrl || coverImage,
+          title: title
+        });
+      } else {
+        // Use the already loaded preview video
+        playMovie({
+          videoUrl: previewVideo.videoUrl,
+          posterUrl: previewVideo.posterUrl || coverImage,
+          title: title
+        });
+      }
+      
+      // Close the preview
+      onClose();
+    } catch (error) {
+      console.error('Failed to play video:', error);
+      setError('Failed to play video');
+    }
+  };
+
+  // Handle more info button click
+  const handleMoreInfo = () => {
+    if (onMoreInfo) {
+      onMoreInfo();
+      onClose(); // Close the preview when opening the modal
+    }
+  };
+
   return (
     <div
       data-testid="preview-container"
@@ -192,6 +235,7 @@ export function PantheonPreview({
                 className="flex items-center justify-center w-11 h-11 rounded-full bg-white hover:bg-white/90 transition-colors"
                 aria-label="Play"
                 data-testid="play-button"
+                onClick={handlePlay}
               >
                 <Play className="w-6 h-6 text-black" />
               </button>
@@ -200,6 +244,7 @@ export function PantheonPreview({
               className="flex items-center justify-center w-11 h-11 rounded-full bg-zinc-800/80 hover:bg-zinc-800 border border-white/20 transition-colors"
               aria-label="More Info"
               data-testid="more-info-button"
+              onClick={handleMoreInfo}
             >
               <ChevronDown className="w-6 h-6 text-white" />
             </button>
