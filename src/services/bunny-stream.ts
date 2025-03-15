@@ -30,7 +30,7 @@ interface GetPreviewVideoOptions {
 
 // Simple in-memory cache
 const cache = new Map<string, { videoUrl: string; posterUrl: string; timestamp: number }>();
-const CACHE_DURATION = 1000 * 60 * 60; // 1 hour
+const CACHE_DURATION = 1000 * 60 * 5; // 5 minutes instead of 1 hour
 
 // Helper function to generate video URLs
 function generateVideoUrls(videoId: string) {
@@ -103,68 +103,148 @@ export async function getPreviewVideo(
   videoId: string,
   options: GetPreviewVideoOptions = {}
 ): Promise<{ videoUrl: string; posterUrl: string }> {
+  // Generate a unique request ID for tracking this specific call
+  const requestId = `req-${Date.now().toString(36)}-${Math.random().toString(36).substr(2, 5)}`;
+  
+  console.group(`🎬 getPreviewVideo [${requestId}] for ID: ${videoId}`);
+  console.log(`Options:`, options);
+  
   try {
-    console.log('getPreviewVideo called with ID:', videoId, 'options:', options);
-    
     // Check cache first (unless forceRefresh is true)
     const cacheKey = videoId;
     const cached = cache.get(cacheKey);
-
-    if (!options.forceRefresh && cached && Date.now() - cached.timestamp < CACHE_DURATION) {
-      console.log('Using cached preview for video:', videoId);
-      return {
-        videoUrl: cached.videoUrl,
-        posterUrl: cached.posterUrl,
-      };
+    const now = Date.now();
+    
+    console.log(`Cache check - forceRefresh: ${!!options.forceRefresh}, hasCached: ${!!cached}`);
+    if (cached) {
+      const age = now - cached.timestamp;
+      const isExpired = age > CACHE_DURATION;
+      console.log(`Cache age: ${age}ms, expired: ${isExpired}, max age: ${CACHE_DURATION}ms`);
     }
 
-    // If forceRefresh is true or cache is stale, fetch fresh data
-    console.log('Fetching video details from Bunny.net API for ID:', videoId);
+    // Only use cache if not forcing refresh, cache exists, and isn't expired
+    if (!options.forceRefresh && 
+        cached && 
+        (now - cached.timestamp < CACHE_DURATION)) {
+      console.log(`Using cached preview for video:`, videoId);
+      
+      // Validate cached URLs
+      try {
+        console.log(`Validating cached URL: ${cached.videoUrl.substring(0, 50)}...`);
+        const response = await fetch(cached.videoUrl, { method: 'HEAD' });
+        console.log(`Cache validation response:`, response.status);
+        
+        if (response.ok) {
+          console.log(`✅ Cache is valid, returning cached data`);
+          console.groupEnd();
+          return {
+            videoUrl: cached.videoUrl,
+            posterUrl: cached.posterUrl,
+          };
+        } else {
+          console.log(`❌ Cached video URL is invalid (status: ${response.status}), fetching fresh data`);
+          cache.delete(cacheKey);
+        }
+      } catch (error) {
+        console.warn(`❌ Error validating cached URL:`, error);
+        cache.delete(cacheKey);
+      }
+    }
+
+    // If we reach here, we need fresh data
+    console.log(`Fetching fresh video details from API for ID: ${videoId}`);
+    console.time(`api-fetch-${requestId}`);
+    
     const response = await fetch(`${BUNNY_CONFIG.apiBaseUrl}/${BUNNY_CONFIG.libraryId}/videos/${videoId}`, {
       headers: {
         'Accept': 'application/json',
         'AccessKey': BUNNY_CONFIG.apiKey
       }
     });
+    
+    console.timeEnd(`api-fetch-${requestId}`);
+    console.log(`API response status:`, response.status);
 
     if (!response.ok) {
-      console.error('API response not OK:', response.status, response.statusText);
-      throw new Error('Failed to fetch video details');
+      console.error(`❌ API response not OK: ${response.status} - ${response.statusText}`);
+      throw new Error(`Failed to fetch video details: ${response.statusText}`);
     }
 
     const videoDetails = await response.json();
-    console.log('Video details received from API:', videoDetails);
+    console.log(`✅ Video details received`);
+    
+    if (!videoDetails || !videoDetails.guid) {
+      console.error(`❌ Invalid video details received from API:`, videoDetails);
+      throw new Error('Invalid video details received from API');
+    }
     
     const urls = generateVideoUrls(videoDetails.guid);
-    console.log('Generated URLs:', urls);
+    console.log(`Generated URLs - videoUrl: ${urls.videoUrl.substring(0, 50)}...`);
+    
+    // Validate the video URL before caching
+    console.log(`Validating generated video URL...`);
+    console.time(`url-validation-${requestId}`);
+    const videoResponse = await fetch(urls.videoUrl, { method: 'HEAD' });
+    console.timeEnd(`url-validation-${requestId}`);
+    
+    console.log(`URL validation response:`, videoResponse.status);
+    if (!videoResponse.ok) {
+      console.error(`❌ Generated video URL validation failed (status: ${videoResponse.status})`);
+      throw new Error('Generated video URL is invalid');
+    }
     
     const result = {
       videoUrl: urls.videoUrl,
       posterUrl: urls.posterUrl,
     };
 
-    // Cache the result
+    // Cache the validated result
+    console.log(`✅ Caching valid result`);
     cache.set(cacheKey, {
       ...result,
-      timestamp: Date.now(),
+      timestamp: now,
     });
 
-    console.log('Returning preview video result:', result);
+    console.log(`✅ Returning fresh preview video result`);
+    console.groupEnd();
     return result;
   } catch (error) {
-    console.error('Error in getPreviewVideo:', error);
+    console.error(`❌ Error in getPreviewVideo:`, error);
     
-    // Fallback to static asset if API fails or video ID not found
-    console.log('Using fallback video asset');
+    // Clear cache for this video ID if there was an error
+    console.log(`Clearing cache for ${videoId} due to error`);
+    cache.delete(videoId);
+    
+    // Try fallback video if available
+    console.log(`Attempting to use fallback video`);
     const asset = VIDEO_ASSETS['pantheon-highlight'];
     if (!asset) {
-      throw new Error('Preview video asset not found');
+      console.error(`❌ Fallback video asset not found`);
+      console.groupEnd();
+      throw new Error('Preview video not available');
     }
 
-    return {
-      videoUrl: asset.videoUrl,
-      posterUrl: asset.posterUrl,
-    };
+    // Validate fallback video URL
+    try {
+      console.log(`Validating fallback URL: ${asset.videoUrl.substring(0, 50)}...`);
+      const response = await fetch(asset.videoUrl, { method: 'HEAD' });
+      
+      if (!response.ok) {
+        console.error(`❌ Fallback validation failed (status: ${response.status})`);
+        throw new Error('Fallback video URL is invalid');
+      }
+      
+      console.log(`✅ Using fallback video`);
+      console.groupEnd();
+      return {
+        videoUrl: asset.videoUrl,
+        posterUrl: asset.posterUrl,
+      };
+    } catch (fallbackError) {
+      console.error(`❌ Fallback video also failed:`, fallbackError);
+      console.groupEnd();
+      throw new Error('Video preview is currently unavailable');
+    }
   }
 }
 

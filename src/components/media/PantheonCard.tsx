@@ -1,4 +1,8 @@
 import { cn } from "@/lib/utils";
+import { useRef, useEffect } from "react";
+
+// Debug counter for component instances
+let cardInstanceCounter = 0;
 
 interface PantheonCardProps {
   mediaId: string;
@@ -15,12 +19,32 @@ export function PantheonCard({
   isPantheonOriginal,
   onHover,
 }: PantheonCardProps) {
+  const instanceIdRef = useRef(`card-${++cardInstanceCounter}`);
+  
+  // Debug logging
+  useEffect(() => {
+    const id = instanceIdRef.current;
+    console.log(`🃏 ${id} MOUNTED - ${title}`);
+    
+    return () => {
+      console.log(`🗑️ ${id} UNMOUNTED - ${title}`);
+    };
+  }, [title]);
+
+  // Track mouse events
+  const handleMouseEnter = (e: React.MouseEvent) => {
+    const id = instanceIdRef.current;
+    console.log(`🖱️ ${id} mouseEnter event triggered`, e.type);
+    onHover();
+  };
+
   return (
     <div 
       className="w-full rounded-lg group-hover:opacity-0 group-hover:invisible transition duration-200"
-      onMouseEnter={onHover}
+      onMouseEnter={handleMouseEnter}
       data-testid="pantheon-card"
       data-media-id={mediaId}
+      data-instance-id={instanceIdRef.current}
     >
       <div className="relative h-[176px] rounded-lg overflow-hidden">
         <img
