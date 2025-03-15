@@ -25,6 +25,7 @@ export function MoviePlayer({
   const navigate = useNavigate();
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
+  const [volume, setVolume] = useState(1);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isPiP, setIsPiP] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -64,7 +65,13 @@ export function MoviePlayer({
         const hls = new Hls({
           enableWorker: true,
           lowLatencyMode: true,
-          debug: true,
+          debug: false,
+          fragLoadingMaxRetry: 5,
+          manifestLoadingMaxRetry: 5,
+          levelLoadingMaxRetry: 5,
+          xhrSetup: (xhr) => {
+            xhr.withCredentials = false;
+          }
         });
         
         hls.on(Hls.Events.ERROR, (event, data) => {
@@ -87,6 +94,10 @@ export function MoviePlayer({
         hls.on(Hls.Events.MANIFEST_PARSED, () => {
           console.log('HLS manifest parsed successfully');
           setIsLoading(false);
+          
+          // Set initial mute state based on user preference
+          videoElement.muted = isMuted;
+          
           if (videoElement.paused && isPlaying) {
             videoElement.play()
               .then(() => {
@@ -94,6 +105,13 @@ export function MoviePlayer({
               })
               .catch(err => {
                 console.error('Error starting playback:', err);
+                // Try muted playback as fallback
+                videoElement.muted = true;
+                setIsMuted(true);
+                videoElement.play()
+                  .catch(innerErr => {
+                    console.error('Even muted playback failed:', innerErr);
+                  });
               });
           }
         });
@@ -109,9 +127,21 @@ export function MoviePlayer({
         videoElement.src = src;
         videoElement.addEventListener('loadedmetadata', () => {
           setIsLoading(false);
+          // Set initial mute state based on user preference
+          videoElement.muted = isMuted;
+          
           if (isPlaying) {
             videoElement.play()
-              .catch(err => console.error('Error playing video:', err));
+              .catch(err => {
+                console.error('Error playing video:', err);
+                // Try muted playback as fallback
+                videoElement.muted = true;
+                setIsMuted(true);
+                videoElement.play()
+                  .catch(innerErr => {
+                    console.error('Even muted playback failed:', innerErr);
+                  });
+              });
           }
         });
       } else {
@@ -124,7 +154,7 @@ export function MoviePlayer({
       setError('Failed to initialize video player');
       setIsLoading(false);
     }
-  }, [isPlaying]);
+  }, [isPlaying, isMuted]);
 
   // Handle keyboard shortcuts
   useEffect(() => {
@@ -217,8 +247,34 @@ export function MoviePlayer({
   // Handle mute toggle
   const toggleMute = useCallback(() => {
     if (videoRef.current) {
-      videoRef.current.muted = !isMuted;
-      setIsMuted(!isMuted);
+      const newMutedState = !isMuted;
+      videoRef.current.muted = newMutedState;
+      
+      // If unmuting, restore previous volume or set to 1
+      if (!newMutedState && videoRef.current.volume === 0) {
+        videoRef.current.volume = volume > 0 ? volume : 1;
+      }
+      
+      setIsMuted(newMutedState);
+    }
+  }, [isMuted, volume]);
+
+  // Add volume change handler
+  const handleVolumeChange = useCallback((newVolume: number) => {
+    if (videoRef.current) {
+      // Clamp volume between 0 and 1
+      const clampedVolume = Math.max(0, Math.min(1, newVolume));
+      videoRef.current.volume = clampedVolume;
+      setVolume(clampedVolume);
+      
+      // Update muted state based on volume
+      if (clampedVolume === 0) {
+        videoRef.current.muted = true;
+        setIsMuted(true);
+      } else if (isMuted) {
+        videoRef.current.muted = false;
+        setIsMuted(false);
+      }
     }
   }, [isMuted]);
 
@@ -338,15 +394,25 @@ export function MoviePlayer({
       setError(null);
       setRetryCount(0);
       
-      // Try to auto-play muted first
-      video.muted = true;
+      // Try to auto-play but don't force mute
       video.play().then(() => {
         // Successfully started playing
         setIsPlaying(true);
+        // Restore user's mute preference
+        video.muted = isMuted;
       }).catch(error => {
         console.warn('Auto-play failed:', error);
-        setError('Click play to start video');
-        setIsPlaying(false);
+        // Try muted playback as fallback (for autoplay policies)
+        video.muted = true;
+        video.play().then(() => {
+          setIsPlaying(true);
+          // Keep track that we had to mute
+          setIsMuted(true);
+        }).catch(innerError => {
+          console.error('Even muted playback failed:', innerError);
+          setError('Click play to start video');
+          setIsPlaying(false);
+        });
       });
     };
     const handleError = () => {
@@ -384,7 +450,7 @@ export function MoviePlayer({
         clearTimeout(retryTimeoutRef.current);
       }
     };
-  }, [retryCount, maxRetries]);
+  }, [retryCount, maxRetries, isMuted]);
 
   // Format time
   const formatTime = (seconds: number) => {
@@ -405,6 +471,14 @@ export function MoviePlayer({
     };
   }, []);
 
+  // Update volume when component mounts
+  useEffect(() => {
+    if (videoRef.current) {
+      videoRef.current.volume = volume;
+      videoRef.current.muted = isMuted;
+    }
+  }, [volume, isMuted]);
+
   return (
     <div 
       ref={playerRef}
@@ -413,18 +487,17 @@ export function MoviePlayer({
         "w-full h-full",
         className
       )}
+      onClick={togglePlay}
     >
       {/* Video Element */}
       <video
         ref={videoRef}
         poster={poster}
         className="w-full h-full object-cover"
-        onClick={togglePlay}
         onTimeUpdate={handleTimeUpdate}
         crossOrigin="anonymous"
         playsInline
-        preload="metadata"
-        muted
+        preload="auto"
         onError={(e) => {
           const video = e.currentTarget;
           console.error('Video error details:', {
@@ -459,7 +532,8 @@ export function MoviePlayer({
         <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/80">
           <p className="text-white mb-4">{error}</p>
           <button
-            onClick={() => {
+            onClick={(e) => {
+              e.stopPropagation();
               setError(null);
               setRetryCount(0);
               if (videoRef.current) {
@@ -480,13 +554,17 @@ export function MoviePlayer({
           "transition-opacity duration-300",
           showControls ? "opacity-100" : "opacity-0"
         )}
+        onClick={(e) => e.stopPropagation()}
       >
         {/* Title Bar */}
         <div className="absolute top-0 left-0 right-0 p-4 flex items-center justify-between">
           <h2 className="text-white text-lg font-medium">{title}</h2>
           {onClose && (
             <button
-              onClick={onClose}
+              onClick={(e) => {
+                e.stopPropagation();
+                if (onClose) onClose();
+              }}
               className="text-white/80 hover:text-white transition-colors"
               aria-label="Close player"
             >
@@ -500,7 +578,10 @@ export function MoviePlayer({
           {/* Progress Bar */}
           <div 
             className="w-full h-1 bg-white/20 rounded-full mb-4 cursor-pointer group"
-            onClick={handleSeek}
+            onClick={(e) => {
+              e.stopPropagation();
+              handleSeek(e);
+            }}
           >
             <div 
               className="h-full bg-white rounded-full group-hover:bg-pantheon-pink transition-colors"
@@ -512,7 +593,10 @@ export function MoviePlayer({
           <div className="flex items-center gap-4">
             {/* Play/Pause */}
             <button
-              onClick={togglePlay}
+              onClick={(e) => {
+                e.stopPropagation();
+                togglePlay();
+              }}
               className="text-white hover:text-white/80 transition-colors"
               aria-label={isPlaying ? "Pause" : "Play"}
             >
@@ -525,7 +609,10 @@ export function MoviePlayer({
 
             {/* Rewind 10s */}
             <button
-              onClick={() => videoRef.current && (videoRef.current.currentTime -= 10)}
+              onClick={(e) => {
+                e.stopPropagation();
+                if (videoRef.current) videoRef.current.currentTime -= 10;
+              }}
               className="text-white hover:text-white/80 transition-colors"
               aria-label="Rewind 10 seconds"
             >
@@ -534,7 +621,10 @@ export function MoviePlayer({
 
             {/* Forward 10s */}
             <button
-              onClick={() => videoRef.current && (videoRef.current.currentTime += 10)}
+              onClick={(e) => {
+                e.stopPropagation();
+                if (videoRef.current) videoRef.current.currentTime += 10;
+              }}
               className="text-white hover:text-white/80 transition-colors"
               aria-label="Forward 10 seconds"
             >
@@ -542,17 +632,40 @@ export function MoviePlayer({
             </button>
 
             {/* Volume */}
-            <button
-              onClick={toggleMute}
-              className="text-white hover:text-white/80 transition-colors"
-              aria-label={isMuted ? "Unmute" : "Mute"}
-            >
-              {isMuted ? (
-                <VolumeX className="w-6 h-6" />
-              ) : (
-                <Volume2 className="w-6 h-6" />
-              )}
-            </button>
+            <div className="relative flex items-center">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toggleMute();
+                }}
+                className="text-white hover:text-white/80 transition-colors"
+                aria-label={isMuted ? "Unmute" : "Mute"}
+              >
+                {isMuted ? (
+                  <VolumeX className="w-6 h-6" />
+                ) : (
+                  <Volume2 className="w-6 h-6" />
+                )}
+              </button>
+              
+              {/* Volume Slider */}
+              <div 
+                className="w-16 h-1 bg-white/20 rounded-full ml-2 cursor-pointer hidden md:block"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  const bounds = e.currentTarget.getBoundingClientRect();
+                  const x = e.clientX - bounds.left;
+                  const width = bounds.width;
+                  const percentage = x / width;
+                  handleVolumeChange(percentage);
+                }}
+              >
+                <div 
+                  className="h-full bg-white rounded-full"
+                  style={{ width: `${isMuted ? 0 : volume * 100}%` }}
+                />
+              </div>
+            </div>
 
             {/* Time Display */}
             <div className="text-white text-sm">
@@ -567,7 +680,10 @@ export function MoviePlayer({
 
             {/* Picture in Picture */}
             <button
-              onClick={togglePiP}
+              onClick={(e) => {
+                e.stopPropagation();
+                togglePiP();
+              }}
               className="text-white hover:text-white/80 transition-colors"
               aria-label={isPiP ? "Exit Picture in Picture" : "Enter Picture in Picture"}
             >
@@ -577,7 +693,10 @@ export function MoviePlayer({
             {/* Settings */}
             <div className="relative">
               <button
-                onClick={() => setShowSettings(!showSettings)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowSettings(!showSettings);
+                }}
                 className="text-white hover:text-white/80 transition-colors"
                 aria-label="Settings"
               >
@@ -594,7 +713,10 @@ export function MoviePlayer({
                       {speedOptions.map(speed => (
                         <button
                           key={speed}
-                          onClick={() => setPlaybackSpeed(speed)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setPlaybackSpeed(speed);
+                          }}
                           className={cn(
                             "px-2 py-1 text-sm rounded",
                             playbackSpeed === speed
@@ -614,7 +736,10 @@ export function MoviePlayer({
                     {['auto', '1080p', '720p', '480p'].map(q => (
                       <button
                         key={q}
-                        onClick={() => setQuality(q as any)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setQuality(q as any);
+                        }}
                         className={cn(
                           "block w-full text-left px-2 py-1 text-sm rounded",
                           quality === q
@@ -632,7 +757,10 @@ export function MoviePlayer({
 
             {/* Fullscreen */}
             <button
-              onClick={toggleFullscreen}
+              onClick={(e) => {
+                e.stopPropagation();
+                toggleFullscreen();
+              }}
               className="text-white hover:text-white/80 transition-colors"
               aria-label={isFullscreen ? "Exit Fullscreen" : "Enter Fullscreen"}
             >
@@ -644,16 +772,6 @@ export function MoviePlayer({
             </button>
           </div>
         </div>
-      </div>
-
-      {/* Keyboard Shortcuts Help */}
-      <div className="absolute top-4 right-4 text-xs text-white/60">
-        <div>Space: Play/Pause</div>
-        <div>F: Fullscreen</div>
-        <div>M: Mute</div>
-        <div>P: Picture in Picture</div>
-        <div>←/→: Seek 10s</div>
-        <div>&lt;/&gt;: Change Speed</div>
       </div>
     </div>
   );
